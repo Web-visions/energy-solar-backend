@@ -7,7 +7,54 @@ const sendEmail = require('../config/email.config');
 // @access  Public
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, confirmPassword } = req.body;
+
+    // Validation
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a name'
+      });
+    }
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an email'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^([\w-\.]+@([\w-]+\.)+[\w-]{2,4})?$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email'
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a password'
+      });
+    }
+
+    // Validate password length
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters'
+      });
+    }
+
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match'
+      });
+    }
 
     // Check if user already exists
     let user = await User.findOne({ email });
@@ -18,12 +65,15 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Create user
-    user = await User.create({
+    // Create user with validated fields
+    const userData = {
       name,
       email,
       password
-    });
+    };
+
+
+    user = await User.create(userData);
 
     // Generate OTP for email verification
     const otp = user.generateOTP();
@@ -40,7 +90,8 @@ exports.register = async (req, res) => {
       `
     });
 
-    sendTokenResponse(user, 201, res, 'User registered successfully. Please verify your email.');
+    // Include OTP in response for testing purposes
+    sendTokenResponse(user, 201, res, 'User registered successfully. Please verify your email.', otp);
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -343,12 +394,10 @@ exports.logout = async (req, res) => {
 // @access  Private
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: user
-    });
+      data: req.user
+    })
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -358,35 +407,27 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// Helper function to get token from model, create cookie and send response
-const sendTokenResponse = (user, statusCode, res, message) => {
-  // Create token
+const sendTokenResponse = (user, statusCode, res, message, otp = null) => {
+  // Create JWT token
   const token = user.getSignedJwtToken();
 
-  const options = {
-    expires: new Date(
-      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000
-    ),
-    httpOnly: true
+  const response = {
+    success: true,
+    message,
+    token, // <-- direct in JSON
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isEmailVerified: user.isEmailVerified
+    }
   };
 
-  if (process.env.NODE_ENV === 'production') {
-    options.secure = true;
+  // For test/dev: include OTP in response if provided
+  if (otp && process.env.NODE_ENV !== 'production') {
+    response.otp = otp;
   }
 
-  res
-    .status(statusCode)
-    .cookie('token', token, options)
-    .json({
-      success: true,
-      message,
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        isEmailVerified: user.isEmailVerified
-      }
-    });
+  res.status(statusCode).json(response);
 };

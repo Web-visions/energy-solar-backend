@@ -27,7 +27,7 @@ const UserSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'admin'],
+    enum: ['user', 'admin', 'staff'],
     default: 'user'
   },
   isEmailVerified: {
@@ -47,9 +47,9 @@ const UserSchema = new mongoose.Schema({
 });
 
 // Encrypt password using bcrypt
-UserSchema.pre('save', async function(next) {
+UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);
@@ -58,29 +58,26 @@ UserSchema.pre('save', async function(next) {
 });
 
 // Sign JWT and return
-UserSchema.methods.getSignedJwtToken = function() {
+UserSchema.methods.getSignedJwtToken = function () {
   return jwt.sign(
     { id: this._id, role: this.role },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE }
+    { expiresIn: process.env.JWT_EXPIRE || '7d' } // fallback to 7 days
   );
 };
 
 // Match user entered password to hashed password in database
-UserSchema.methods.matchPassword = async function(enteredPassword) {
+UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 // Generate and hash OTP
-UserSchema.methods.generateOTP = function() {
+UserSchema.methods.generateOTP = function () {
   // Generate 6 digit OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  
+
   // Hash OTP
-  this.otp = crypto
-    .createHash('sha256')
-    .update(otp)
-    .digest('hex');
+  this.otp = crypto.createHash('sha256').update(otp).digest('hex');
 
   // Set OTP expire
   this.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
@@ -89,15 +86,12 @@ UserSchema.methods.generateOTP = function() {
 };
 
 // Generate password reset token
-UserSchema.methods.getResetPasswordToken = function() {
+UserSchema.methods.getResetPasswordToken = function () {
   // Generate token
   const resetToken = crypto.randomBytes(20).toString('hex');
 
   // Hash token and set to resetPasswordToken field
-  this.resetPasswordToken = crypto
-    .createHash('sha256')
-    .update(resetToken)
-    .digest('hex');
+  this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
   // Set expire
   this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
