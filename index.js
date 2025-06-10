@@ -9,6 +9,10 @@ const cookieParser = require('cookie-parser');
 // Import routes
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
+const brandRoutes = require('./routes/brand.routes');
+const cityRoutes = require('./routes/city.routes');
+const categoryRoutes = require('./routes/category.routes');
+const productRoutes = require('./routes/product.routes');
 // const adminRoutes = require('./routes/admin.routes');
 
 // Initialize express app
@@ -34,6 +38,10 @@ mongoose.connect(process.env.MONGODB_URI)
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/brands', brandRoutes);
+app.use('/api/cities', cityRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/products', productRoutes);
 // app.use('/api/admin', adminRoutes);
 
 // Root route

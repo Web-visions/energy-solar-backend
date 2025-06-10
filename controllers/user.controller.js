@@ -1,6 +1,6 @@
 const User = require('../models/user.model');
 
-// @desc    Get all users with pagination
+// @desc    Get all users with pagination and search
 // @route   GET /api/users
 // @access  Private/Admin
 exports.getUsers = async (req, res) => {
@@ -9,30 +9,40 @@ exports.getUsers = async (req, res) => {
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
-    const endIndex = page * limit;
-    const total = await User.countDocuments();
+    const search = req.query.search || '';
 
-    // Query with pagination
-    const users = await User.find()
+    // Create search query
+    const searchQuery = {};
+    if (search) {
+      searchQuery.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get total count with search applied
+    const total = await User.countDocuments(searchQuery);
+
+    // Query with pagination and search
+    const users = await User.find(searchQuery)
+      .sort({ createdAt: -1 })
       .skip(startIndex)
       .limit(limit)
       .select('-password');
 
     // Pagination result
     const pagination = {};
+    pagination.total = total;
+    pagination.pages = Math.ceil(total / limit);
+    pagination.page = page;
+    pagination.limit = limit;
 
-    if (endIndex < total) {
-      pagination.next = {
-        page: page + 1,
-        limit
-      };
+    if (page < pagination.pages) {
+      pagination.next = page + 1;
     }
 
-    if (startIndex > 0) {
-      pagination.prev = {
-        page: page - 1,
-        limit
-      };
+    if (page > 1) {
+      pagination.prev = page - 1;
     }
 
     res.status(200).json({
@@ -73,6 +83,161 @@ exports.getUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server Error'
+    });
+  }
+};
+
+// @desc    Create new user
+// @route   POST /api/users
+// @access  Private/Admin
+exports.createUser = async (req, res) => {
+  try {
+    const { name, email, role, isEmailVerified } = req.body;
+
+    // Check if user with this email already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: `User with email ${email} already exists`
+      });
+    }
+
+    // Only allow 'user' and 'staff' roles to be created
+    if (role && role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot create user with admin role'
+      });
+    }
+
+    // Create user with random password
+    const crypto = require('crypto');
+    const randomPassword = crypto.randomBytes(10).toString('hex');
+    
+    const user = await User.create({
+      name,
+      email,
+      password: randomPassword,
+      role: role || 'user',
+      isEmailVerified: isEmailVerified || false
+    });
+
+    // Remove password from response
+    user.password = undefined;
+
+    res.status(201).json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server Error'
+    });
+  }
+};
+
+// @desc    Update user
+// @route   PUT /api/users/:id
+// @access  Private/Admin
+exports.updateUser = async (req, res) => {
+  try {
+    const { name, email, role, isEmailVerified } = req.body;
+    
+    let user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Only allow 'user' and 'staff' roles to be updated
+    if (role && role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot update user to admin role'
+      });
+    }
+
+    // Check if email is being changed and if it already exists
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: `User with email ${email} already exists`
+        });
+      }
+    }
+
+    // Build update object
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (email) updateFields.email = email;
+    if (role && role !== 'admin') updateFields.role = role;
+    if (isEmailVerified !== undefined) updateFields.isEmailVerified = isEmailVerified;
+
+    user = await User.findByIdAndUpdate(
+      req.params.id,
+      updateFields,
+      {
+        new: true,
+        runValidators: true
+      }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server Error'
+    });
+  }
+};
+
+// @desc    Toggle user status (activate/deactivate)
+// @route   PUT /api/users/:id/status
+// @access  Private/Admin
+exports.toggleUserStatus = async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    
+    let user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    user = await User.findByIdAndUpdate(
+      req.params.id,
+      { isActive },
+      {
+        new: true,
+        runValidators: true
+      }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      data: user,
+      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server Error'
     });
   }
 };

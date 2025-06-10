@@ -1,11 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/user.controller');
+const authMiddleware = require('../middlewares/auth.middleware');
 
-// Authentication routes
-// router.post('/login', userController.login);
-router.get('/get-users', userController.getUsers);
-router.get('/get-user/:id', userController.getUser);
+// User routes with authentication middleware
+router.use(authMiddleware);
 
+// Get all users with pagination and search
+router.get('/', userController.getUsers);
+
+// Get single user
+router.get('/:id', userController.getUser);
+
+// Create new user (admin only)
+router.post('/', userController.createUser);
+
+// Update user
+router.put('/:id', userController.updateUser);
+
+// Toggle user status (activate/deactivate)
+router.put('/:id/status', userController.toggleUserStatus);
 
 module.exports = router;
