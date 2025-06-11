@@ -6,7 +6,7 @@ const {
   getCategory,
   createCategory,
   updateCategory,
-  toggleCategoryStatus,
+  // toggleCategoryStatus,
   deleteCategory
 } = require('../controllers/category.controller');
 
@@ -17,7 +17,7 @@ router.get('/:id', getCategory);
 // Protected routes (admin only)
 router.post('/', authMiddleware, createCategory);
 router.put('/:id', authMiddleware,  updateCategory);
-router.put('/:id/status', authMiddleware , toggleCategoryStatus);
+// router.put('/:id/status', authMiddleware , toggleCategoryStatus);
 router.delete('/:id', authMiddleware, deleteCategory);
 
 module.exports = router;

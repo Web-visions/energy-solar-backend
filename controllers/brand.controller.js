@@ -1,4 +1,5 @@
 const Brand = require('../models/brand.model');
+const fileUpload = require('../utils/fileUpload');
 
 // @desc    Get all brands with pagination and search
 // @route   GET /api/brands
@@ -88,7 +89,23 @@ exports.getBrand = async (req, res) => {
 // @access  Private/Admin
 exports.createBrand = async (req, res) => {
   try {
-    const { name, logo, description } = req.body;
+    const { name, description } = req.body;
+
+    // Validate required fields
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a brand name'
+      });
+    }
+
+    // Check if logo file is uploaded
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload a brand logo'
+      });
+    }
 
     // Check if brand with this name already exists
     const existingBrand = await Brand.findOne({ name });
@@ -99,9 +116,12 @@ exports.createBrand = async (req, res) => {
       });
     }
 
+    // Save logo file
+    const logoPath = await fileUpload.saveFile(req.file);
+
     const brand = await Brand.create({
       name,
-      logo,
+      logo: logoPath,
       description
     });
 
@@ -123,7 +143,7 @@ exports.createBrand = async (req, res) => {
 // @access  Private/Admin
 exports.updateBrand = async (req, res) => {
   try {
-    const { name, logo, description } = req.body;
+    const { name, description } = req.body;
     
     let brand = await Brand.findById(req.params.id);
 
@@ -148,8 +168,13 @@ exports.updateBrand = async (req, res) => {
     // Build update object
     const updateFields = {};
     if (name) updateFields.name = name;
-    if (logo !== undefined) updateFields.logo = logo;
     if (description !== undefined) updateFields.description = description;
+
+    // Handle logo update if file is uploaded
+    if (req.file) {
+      const logoPath = await fileUpload.saveFile(req.file, brand.logo);
+      updateFields.logo = logoPath;
+    }
 
     brand = await Brand.findByIdAndUpdate(
       req.params.id,
@@ -226,7 +251,12 @@ exports.deleteBrand = async (req, res) => {
       });
     }
 
-    await brand.remove();
+    // Delete logo file
+    if (brand.logo) {
+      await fileUpload.deleteFile(brand.logo);
+    }
+
+    await Brand.findByIdAndDelete(req.params.id);
 
     res.status(200).json({
       success: true,

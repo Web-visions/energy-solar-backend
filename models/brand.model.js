@@ -10,7 +10,7 @@ const BrandSchema = new mongoose.Schema({
   },
   logo: {
     type: String,
-    default: ''
+    required: [true, 'Please upload a brand logo']
   },
   description: {
     type: String,
