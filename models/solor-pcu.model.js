@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 
 const solarPCUSchema = new mongoose.Schema({
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
+  brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },  
   name: { type: String, required: true },
   description: String,
   features: [String],

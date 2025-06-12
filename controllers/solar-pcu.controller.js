@@ -72,7 +72,7 @@ exports.getAllSolarPCUs = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarPCUs = await SolarPCU.find(query)
       .populate('category', 'name')
-      .populate('reviews')
+      // .populate('reviews')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -104,7 +104,7 @@ exports.getSolarPCU = async (req, res) => {
   try {
     const solarPCU = await SolarPCU.findById(req.params.id)
       .populate('category', 'name')
-      .populate('reviews');
+      // .populate('reviews');
     
     if (!solarPCU) {
       return res.status(404).json({
