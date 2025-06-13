@@ -1,5 +1,13 @@
 const Product = require('../models/product.model');
 const mongoose = require('mongoose');
+const UPS = require('../models/ups.model');
+const SolarPCU = require('../models/solor-pcu.model');
+const SolarPV = require('../models/solor-pv.model');
+const SolarStreetLight = require('../models/solor-street-light.model');
+const Inverter = require('../models/invertor.model.');
+const Battery = require('../models/battery');
+const Brand = require('../models/brand.model');
+const Category = require('../models/category.model');
 
 // @desc    Get all products with pagination, search, and filtering
 // @route   GET /api/products
@@ -11,10 +19,10 @@ exports.getProducts = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
-    
+
     // Create base query
     const query = {};
-    
+
     // Search functionality
     if (search) {
       query.$or = [
@@ -22,126 +30,91 @@ exports.getProducts = async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Filter by product type
-    if (req.query.productType) {
-      query.productType = req.query.productType;
-    }
-    
-    // Filter by brand
-    if (req.query.brand) {
-      query.brand = req.query.brand;
-    }
-    
-    // Filter by category
-    if (req.query.category) {
-      query.category = req.query.category;
-    }
-    
-    // Filter by price range
-    if (req.query.minPrice || req.query.maxPrice) {
-      query.price = {};
-      if (req.query.minPrice) query.price.$gte = Number(req.query.minPrice);
-      if (req.query.maxPrice) query.price.$lte = Number(req.query.maxPrice);
-    }
-    
-    // Filter by active status
-    if (req.query.isActive !== undefined) {
-      query.isActive = req.query.isActive === 'true';
-    }
-    
-    // Filter by featured status
-    if (req.query.isFeatured !== undefined) {
-      query.isFeatured = req.query.isFeatured === 'true';
-    }
-    
-    // Battery-specific filters
-    if (req.query.productType === 'battery') {
-      // Filter by battery type
-      if (req.query.batteryType) {
-        query['batteryDetails.batteryType'] = req.query.batteryType;
+    const productType = req.query.type;
+    let products = [];
+    let total = 0;
+
+    if (productType) {
+      // If type is specified, use specific model
+      let Model;
+      switch (productType) {
+        case 'ups':
+          Model = UPS;
+          break;
+        case 'solar-pcu':
+          Model = SolarPCU;
+          break;
+        case 'solar-pv':
+          Model = SolarPV;
+          break;
+        case 'solar-street-light':
+          Model = SolarStreetLight;
+          break;
+        case 'inverter':
+          Model = Inverter;
+          break;
+        case 'battery':
+          Model = Battery;
+          break;
+        default:
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid product type'
+          });
       }
-      
-      // Filter by power capacity range
-      if (req.query.minPowerCapacity || req.query.maxPowerCapacity) {
-        query['batteryDetails.powerCapacity'] = {};
-        if (req.query.minPowerCapacity) {
-          query['batteryDetails.powerCapacity'].$gte = Number(req.query.minPowerCapacity);
-        }
-        if (req.query.maxPowerCapacity) {
-          query['batteryDetails.powerCapacity'].$lte = Number(req.query.maxPowerCapacity);
-        }
+
+      // Apply filters
+      if (req.query.brand) query.brand = req.query.brand;
+      if (req.query.category) query.category = req.query.category;
+      if (req.query.minPrice || req.query.maxPrice) {
+        query.$or = [
+          { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
+          { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
+        ];
       }
-      
-      // Filter by voltage range
-      if (req.query.minVoltage || req.query.maxVoltage) {
-        query['batteryDetails.voltage'] = {};
-        if (req.query.minVoltage) {
-          query['batteryDetails.voltage'].$gte = Number(req.query.minVoltage);
-        }
-        if (req.query.maxVoltage) {
-          query['batteryDetails.voltage'].$lte = Number(req.query.maxVoltage);
-        }
-      }
-    }
-    
-    // Solar panel-specific filters
-    if (req.query.productType === 'solar') {
-      // Filter by panel type
-      if (req.query.panelType) {
-        query['solarDetails.panelType'] = req.query.panelType;
-      }
-      
-      // Filter by power output range
-      if (req.query.minPowerOutput || req.query.maxPowerOutput) {
-        query['solarDetails.powerOutput'] = {};
-        if (req.query.minPowerOutput) {
-          query['solarDetails.powerOutput'].$gte = Number(req.query.minPowerOutput);
-        }
-        if (req.query.maxPowerOutput) {
-          query['solarDetails.powerOutput'].$lte = Number(req.query.maxPowerOutput);
-        }
-      }
-      
-      // Filter by efficiency range
-      if (req.query.minEfficiency || req.query.maxEfficiency) {
-        query['solarDetails.efficiency'] = {};
-        if (req.query.minEfficiency) {
-          query['solarDetails.efficiency'].$gte = Number(req.query.minEfficiency);
-        }
-        if (req.query.maxEfficiency) {
-          query['solarDetails.efficiency'].$lte = Number(req.query.maxEfficiency);
-        }
-      }
-      
-      // Filter by installation type
-      if (req.query.installationType) {
-        query['solarDetails.installationType'] = req.query.installationType;
-      }
-    }
-    
-    // Get total count with filters applied
-    const total = await Product.countDocuments(query);
-    
-    // Sorting
-    let sortOption = {};
-    if (req.query.sortBy) {
-      const sortField = req.query.sortBy;
-      const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
-      sortOption[sortField] = sortOrder;
+
+      total = await Model.countDocuments(query);
+      products = await Model.find(query)
+        .populate('brand', 'name logo')
+        .populate('category', 'name')
+        .sort({ createdAt: -1 })
+        .skip(startIndex)
+        .limit(limit);
     } else {
-      // Default sort by createdAt desc
-      sortOption = { createdAt: -1 };
+      // If no type specified, search in all models
+      const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
+        UPS.find(query).populate('brand', 'name logo').populate('category', 'name'),
+        SolarPCU.find(query).populate('brand', 'name logo').populate('category', 'name'),
+        SolarPV.find(query).populate('brand', 'name logo').populate('category', 'name'),
+        SolarStreetLight.find(query).populate('brand', 'name logo').populate('category', 'name'),
+        Inverter.find(query).populate('brand', 'name logo').populate('category', 'name'),
+        Battery.find(query).populate('brand', 'name logo').populate('category', 'name')
+      ]);
+
+      products = [...ups, ...solarPCU, ...solarPV, ...solarStreetLight, ...inverter, ...battery];
+
+      // Apply additional filters
+      if (req.query.brand) {
+        products = products.filter(p => p.brand?._id.toString() === req.query.brand);
+      }
+      if (req.query.category) {
+        products = products.filter(p => p.category?._id.toString() === req.query.category);
+      }
+      if (req.query.minPrice || req.query.maxPrice) {
+        products = products.filter(p => {
+          const price = p.sellingPrice || p.mrp;
+          if (req.query.minPrice && price < Number(req.query.minPrice)) return false;
+          if (req.query.maxPrice && price > Number(req.query.maxPrice)) return false;
+          return true;
+        });
+      }
+
+      total = products.length;
+      products = products.slice(startIndex, startIndex + limit);
     }
-    
-    // Query with pagination, filtering, and sorting
-    const products = await Product.find(query)
-      .populate('brand', 'name logo')
-      .populate('category', 'name')
-      .sort(sortOption)
-      .skip(startIndex)
-      .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: products.length,
@@ -171,14 +144,14 @@ exports.getProduct = async (req, res) => {
       .populate('brand', 'name logo description')
       .populate('category', 'name')
       .populate('compatibleWith', 'name mainImage price');
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: product
@@ -219,7 +192,7 @@ exports.createProduct = async (req, res) => {
       features,
       compatibleWith
     } = req.body;
-    
+
     // Check if product with this name already exists
     const existingProduct = await Product.findOne({ name });
     if (existingProduct) {
@@ -228,7 +201,7 @@ exports.createProduct = async (req, res) => {
         message: `Product ${name} already exists`
       });
     }
-    
+
     // Create product
     const product = await Product.create({
       name,
@@ -252,7 +225,7 @@ exports.createProduct = async (req, res) => {
       features,
       compatibleWith
     });
-    
+
     res.status(201).json({
       success: true,
       data: product
@@ -272,21 +245,21 @@ exports.createProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     let product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== product.name) {
       const existingProduct = await Product.findOne({
         name: req.body.name,
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingProduct) {
         return res.status(400).json({
           success: false,
@@ -294,7 +267,7 @@ exports.updateProduct = async (req, res) => {
         });
       }
     }
-    
+
     // Update product
     product = await Product.findByIdAndUpdate(
       req.params.id,
@@ -304,7 +277,7 @@ exports.updateProduct = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: product
@@ -324,16 +297,16 @@ exports.updateProduct = async (req, res) => {
 exports.toggleProductStatus = async (req, res) => {
   try {
     const { isActive } = req.body;
-    
+
     let product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     product = await Product.findByIdAndUpdate(
       req.params.id,
       { isActive },
@@ -342,7 +315,7 @@ exports.toggleProductStatus = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: product
@@ -362,16 +335,16 @@ exports.toggleProductStatus = async (req, res) => {
 exports.toggleProductFeatured = async (req, res) => {
   try {
     const { isFeatured } = req.body;
-    
+
     let product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     product = await Product.findByIdAndUpdate(
       req.params.id,
       { isFeatured },
@@ -380,7 +353,7 @@ exports.toggleProductFeatured = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: product
@@ -400,16 +373,16 @@ exports.toggleProductFeatured = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     await product.remove();
-    
+
     res.status(200).json({
       success: true,
       data: {},
@@ -430,12 +403,12 @@ exports.deleteProduct = async (req, res) => {
 exports.getFeaturedProducts = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit, 10) || 8;
-    
+
     const products = await Product.find({ isFeatured: true, isActive: true })
       .populate('brand', 'name logo')
       .populate('category', 'name')
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: products.length,
@@ -456,16 +429,16 @@ exports.getFeaturedProducts = async (req, res) => {
 exports.getRelatedProducts = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
-    
+
     if (!product) {
       return res.status(404).json({
         success: false,
         message: 'Product not found'
       });
     }
-    
+
     const limit = parseInt(req.query.limit, 10) || 4;
-    
+
     // Find products with same category or compatible with this product
     const relatedProducts = await Product.find({
       $or: [
@@ -479,7 +452,7 @@ exports.getRelatedProducts = async (req, res) => {
       .populate('brand', 'name logo')
       .populate('category', 'name')
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: relatedProducts.length,
@@ -491,5 +464,131 @@ exports.getRelatedProducts = async (req, res) => {
       success: false,
       message: error.message || 'Server Error'
     });
+  }
+};
+
+// Get all products with filters
+exports.getAllProducts = async (req, res) => {
+  try {
+    const { type, brand, category, minPrice, maxPrice, search } = req.query;
+
+    // Build filter object
+    const filter = {};
+    if (brand) filter.brand = brand;
+    if (category) filter.category = category;
+    if (minPrice || maxPrice) {
+      filter.$or = [
+        { sellingPrice: { $gte: minPrice || 0, $lte: maxPrice || Infinity } },
+        { mrp: { $gte: minPrice || 0, $lte: maxPrice || Infinity } }
+      ];
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get products based on type
+    let products = [];
+    switch (type) {
+      case 'ups':
+        products = await UPS.find(filter).populate('brand category');
+        break;
+      case 'solar-pcu':
+        products = await SolarPCU.find(filter).populate('brand category');
+        break;
+      case 'solar-pv':
+        products = await SolarPV.find(filter).populate('brand category');
+        break;
+      case 'solar-street-light':
+        products = await SolarStreetLight.find(filter).populate('brand category');
+        break;
+      case 'inverter':
+        products = await Inverter.find(filter).populate('brand category');
+        break;
+      case 'battery':
+        products = await Battery.find(filter).populate('brand category');
+        break;
+      default:
+        // Get all products
+        const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
+          UPS.find(filter).populate('brand category'),
+          SolarPCU.find(filter).populate('brand category'),
+          SolarPV.find(filter).populate('brand category'),
+          SolarStreetLight.find(filter).populate('brand category'),
+          Inverter.find(filter).populate('brand category'),
+          Battery.find(filter).populate('brand category')
+        ]);
+        products = [...ups, ...solarPCU, ...solarPV, ...solarStreetLight, ...inverter, ...battery];
+    }
+
+    // Get unique brands and categories for filters
+    const brands = await Brand.find();
+    const categories = await Category.find();
+
+    res.json({
+      products,
+      filters: {
+        brands,
+        categories
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get single product by ID and type
+exports.getProductById = async (req, res) => {
+  try {
+    const { id, type } = req.params;
+    let product;
+
+    switch (type) {
+      case 'ups':
+        product = await UPS.findById(id).populate('brand category');
+        break;
+      case 'solar-pcu':
+        product = await SolarPCU.findById(id).populate('brand category');
+        break;
+      case 'solar-pv':
+        product = await SolarPV.findById(id).populate('brand category');
+        break;
+      case 'solar-street-light':
+        product = await SolarStreetLight.findById(id).populate('brand category');
+        break;
+      case 'inverter':
+        product = await Inverter.findById(id).populate('brand category');
+        break;
+      case 'battery':
+        product = await Battery.findById(id).populate('brand category');
+        break;
+      default:
+        return res.status(400).json({ message: 'Invalid product type' });
+    }
+
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get filter options
+exports.getFilterOptions = async (req, res) => {
+  try {
+    const brands = await Brand.find();
+    const categories = await Category.find();
+
+    res.json({
+      brands,
+      categories
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
   }
 };

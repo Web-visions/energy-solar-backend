@@ -33,12 +33,17 @@ app.use(cors({
   origin: "*",
   credentials: true,
 }));
-app.use(helmet());
+app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 app.use(morgan('dev'));
 app.use(cookieParser());
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, path) => {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -50,7 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/brands', brandRoutes);
 app.use('/api/cities', cityRoutes);
-app.use('/api/batteries',batteryRoutes)
+app.use('/api/batteries', batteryRoutes)
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/ups', upsRoutes);
