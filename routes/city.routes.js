@@ -8,10 +8,13 @@ const {
   createCity,
   updateCity,
   toggleCityStatus,
-  deleteCity
+  deleteCity,
+  getActiveCities,
+  getAllCities
 } = require('../controllers/city.controller');
 
 // Public routes
+router.get('/active', getActiveCities);
 router.get('/', getCities);
 router.get('/:id', getCity);
 

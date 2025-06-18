@@ -36,6 +36,8 @@ exports.getProducts = async (req, res) => {
     let products = [];
     let total = 0;
 
+    console.log(productType, "PT")
+
     if (productType) {
       // If type is specified, use specific model
       let Model;
@@ -65,23 +67,43 @@ exports.getProducts = async (req, res) => {
           });
       }
 
+      console.log("Selected Model:", Model.modelName);
+      console.log("Query:", query);
+
       // Apply filters
-      if (req.query.brand) query.brand = req.query.brand;
+      if (req.query.brand) {
+        // Handle both ObjectId and String brand fields
+        query.$or = [
+          { brand: req.query.brand },
+          { 'brand.name': req.query.brand }
+        ];
+      }
       if (req.query.category) query.category = req.query.category;
-      if (req.query.minPrice || req.query.maxPrice) {
+
+      // Only apply price filters for models that have price fields
+      if ((req.query.minPrice || req.query.maxPrice) &&
+        (productType === 'ups' || productType === 'inverter' || productType === 'battery')) {
         query.$or = [
           { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
           { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
         ];
       }
 
+      console.log("Final Query:", JSON.stringify(query, null, 2));
+
+      // Get total count and products
       total = await Model.countDocuments(query);
+      console.log("Total count:", total);
+
       products = await Model.find(query)
         .populate('brand', 'name logo')
         .populate('category', 'name')
         .sort({ createdAt: -1 })
         .skip(startIndex)
         .limit(limit);
+
+      console.log("Found products:", products.length);
+      console.log("First product:", products[0] ? JSON.stringify(products[0], null, 2) : "No products found");
     } else {
       // If no type specified, search in all models
       const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
@@ -94,23 +116,6 @@ exports.getProducts = async (req, res) => {
       ]);
 
       products = [...ups, ...solarPCU, ...solarPV, ...solarStreetLight, ...inverter, ...battery];
-
-      // Apply additional filters
-      if (req.query.brand) {
-        products = products.filter(p => p.brand?._id.toString() === req.query.brand);
-      }
-      if (req.query.category) {
-        products = products.filter(p => p.category?._id.toString() === req.query.category);
-      }
-      if (req.query.minPrice || req.query.maxPrice) {
-        products = products.filter(p => {
-          const price = p.sellingPrice || p.mrp;
-          if (req.query.minPrice && price < Number(req.query.minPrice)) return false;
-          if (req.query.maxPrice && price > Number(req.query.maxPrice)) return false;
-          return true;
-        });
-      }
-
       total = products.length;
       products = products.slice(startIndex, startIndex + limit);
     }
@@ -141,7 +146,8 @@ exports.getProducts = async (req, res) => {
 exports.getProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id)
-      .populate('brand', 'name logo description')
+    console.log(product)
+      .populate('brand', 'name logo')
       .populate('category', 'name')
       .populate('compatibleWith', 'name mainImage price');
 

@@ -12,10 +12,10 @@ exports.getAllSolarStreetLights = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
-    
+
     // Create base query
     const query = {};
-    
+
     // Search functionality
     if (search) {
       query.$or = [
@@ -25,27 +25,27 @@ exports.getAllSolarStreetLights = async (req, res) => {
         { modelName: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Filter by category
     if (req.query.category) {
       query.category = req.query.category;
     }
-    
+
     // Filter by brand
     if (req.query.brand) {
       query.brand = { $regex: req.query.brand, $options: 'i' };
     }
-    
+
     // Filter by power range
     if (req.query.minPower || req.query.maxPower) {
       query.power = {};
       if (req.query.minPower) query.power.$gte = Number(req.query.minPower);
       if (req.query.maxPower) query.power.$lte = Number(req.query.maxPower);
     }
-    
+
     // Get total count with filters applied
     const total = await SolarStreetLight.countDocuments(query);
-    
+
     // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
@@ -56,7 +56,7 @@ exports.getAllSolarStreetLights = async (req, res) => {
       // Default sort by createdAt desc
       sortOption = { createdAt: -1 };
     }
-    
+
     // Query with pagination, filtering, and sorting
     const solarStreetLights = await SolarStreetLight.find(query)
       .populate('category', 'name')
@@ -64,7 +64,7 @@ exports.getAllSolarStreetLights = async (req, res) => {
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: solarStreetLights.length,
@@ -92,15 +92,15 @@ exports.getSolarStreetLight = async (req, res) => {
   try {
     const solarStreetLight = await SolarStreetLight.findById(req.params.id)
       .populate('category', 'name')
-      // .populate('reviews');
-    
+    // .populate('reviews');
+
     if (!solarStreetLight) {
       return res.status(404).json({
         success: false,
         message: 'Solar Street Light not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: solarStreetLight
@@ -127,7 +127,8 @@ exports.createSolarStreetLight = async (req, res) => {
       modelName,
       power,
       replacementPolicy,
-      staticTags
+      staticTags,
+      price
     } = req.body;
 
     // Validate required fields
@@ -142,6 +143,13 @@ exports.createSolarStreetLight = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Name is required'
+      });
+    }
+
+    if (!price || price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid price is required'
       });
     }
 
@@ -170,9 +178,10 @@ exports.createSolarStreetLight = async (req, res) => {
       power: power ? Number(power) : undefined,
       replacementPolicy,
       staticTags: staticTags ? JSON.parse(staticTags) : [],
+      price: Number(price),
       image: imagePath
     });
-    
+
     res.status(201).json({
       success: true,
       data: solarStreetLight
@@ -192,21 +201,21 @@ exports.createSolarStreetLight = async (req, res) => {
 exports.updateSolarStreetLight = async (req, res) => {
   try {
     let solarStreetLight = await SolarStreetLight.findById(req.params.id);
-    
+
     if (!solarStreetLight) {
       return res.status(404).json({
         success: false,
         message: 'Solar Street Light not found'
       });
     }
-    
+
     // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== solarStreetLight.name) {
       const existingSolarStreetLight = await SolarStreetLight.findOne({
         name: req.body.name,
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingSolarStreetLight) {
         return res.status(400).json({
           success: false,
@@ -228,7 +237,8 @@ exports.updateSolarStreetLight = async (req, res) => {
 
     // Convert numeric fields
     if (req.body.power) req.body.power = Number(req.body.power);
-    
+    if (req.body.price) req.body.price = Number(req.body.price);
+
     // Update Solar Street Light
     solarStreetLight = await SolarStreetLight.findByIdAndUpdate(
       req.params.id,
@@ -238,7 +248,7 @@ exports.updateSolarStreetLight = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: solarStreetLight
@@ -258,21 +268,21 @@ exports.updateSolarStreetLight = async (req, res) => {
 exports.deleteSolarStreetLight = async (req, res) => {
   try {
     const solarStreetLight = await SolarStreetLight.findById(req.params.id);
-    
+
     if (!solarStreetLight) {
       return res.status(404).json({
         success: false,
         message: 'Solar Street Light not found'
       });
     }
-    
+
     // Delete image if exists
     if (solarStreetLight.image) {
       await fileUpload.deleteFile(solarStreetLight.image);
     }
-    
+
     await SolarStreetLight.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       data: {},

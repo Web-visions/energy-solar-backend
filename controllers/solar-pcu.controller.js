@@ -12,10 +12,10 @@ exports.getAllSolarPCUs = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
-    
+
     // Create base query
     const query = {};
-    
+
     // Search functionality
     if (search) {
       query.$or = [
@@ -25,39 +25,39 @@ exports.getAllSolarPCUs = async (req, res) => {
         { modelName: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Filter by category
     if (req.query.category) {
       query.category = req.query.category;
     }
-    
+
     // Filter by brand
     if (req.query.brand) {
       query.brand = { $regex: req.query.brand, $options: 'i' };
     }
-    
+
     // Filter by type
     if (req.query.type) {
       query.type = req.query.type;
     }
-    
+
     // Filter by wattage range
     if (req.query.minWattage || req.query.maxWattage) {
       query.wattage = {};
       if (req.query.minWattage) query.wattage.$gte = Number(req.query.minWattage);
       if (req.query.maxWattage) query.wattage.$lte = Number(req.query.maxWattage);
     }
-    
+
     // Filter by weight range
     if (req.query.minWeight || req.query.maxWeight) {
       query.weight = {};
       if (req.query.minWeight) query.weight.$gte = Number(req.query.minWeight);
       if (req.query.maxWeight) query.weight.$lte = Number(req.query.maxWeight);
     }
-    
+
     // Get total count with filters applied
     const total = await SolarPCU.countDocuments(query);
-    
+
     // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
@@ -68,7 +68,7 @@ exports.getAllSolarPCUs = async (req, res) => {
       // Default sort by createdAt desc
       sortOption = { createdAt: -1 };
     }
-    
+
     // Query with pagination, filtering, and sorting
     const solarPCUs = await SolarPCU.find(query)
       .populate('category', 'name')
@@ -76,7 +76,7 @@ exports.getAllSolarPCUs = async (req, res) => {
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: solarPCUs.length,
@@ -104,15 +104,15 @@ exports.getSolarPCU = async (req, res) => {
   try {
     const solarPCU = await SolarPCU.findById(req.params.id)
       .populate('category', 'name')
-      // .populate('reviews');
-    
+    // .populate('reviews');
+
     if (!solarPCU) {
       return res.status(404).json({
         success: false,
         message: 'Solar PCU not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: solarPCU
@@ -143,7 +143,8 @@ exports.createSolarPCU = async (req, res) => {
       staticTags,
       warranty,
       dimension,
-      weight
+      weight,
+      price
     } = req.body;
 
     // Validate required fields
@@ -158,6 +159,13 @@ exports.createSolarPCU = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Name is required'
+      });
+    }
+
+    if (!price || price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid price is required'
       });
     }
 
@@ -190,9 +198,10 @@ exports.createSolarPCU = async (req, res) => {
       warranty,
       dimension,
       weight: weight ? Number(weight) : undefined,
+      price: Number(price),
       image: imagePath
     });
-    
+
     res.status(201).json({
       success: true,
       data: solarPCU
@@ -212,21 +221,21 @@ exports.createSolarPCU = async (req, res) => {
 exports.updateSolarPCU = async (req, res) => {
   try {
     let solarPCU = await SolarPCU.findById(req.params.id);
-    
+
     if (!solarPCU) {
       return res.status(404).json({
         success: false,
         message: 'Solar PCU not found'
       });
     }
-    
+
     // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== solarPCU.name) {
       const existingSolarPCU = await SolarPCU.findOne({
         name: req.body.name,
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingSolarPCU) {
         return res.status(400).json({
           success: false,
@@ -253,7 +262,8 @@ exports.updateSolarPCU = async (req, res) => {
     // Convert numeric fields
     if (req.body.wattage) req.body.wattage = Number(req.body.wattage);
     if (req.body.weight) req.body.weight = Number(req.body.weight);
-    
+    if (req.body.price) req.body.price = Number(req.body.price);
+
     // Update Solar PCU
     solarPCU = await SolarPCU.findByIdAndUpdate(
       req.params.id,
@@ -263,7 +273,7 @@ exports.updateSolarPCU = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: solarPCU
@@ -283,21 +293,21 @@ exports.updateSolarPCU = async (req, res) => {
 exports.deleteSolarPCU = async (req, res) => {
   try {
     const solarPCU = await SolarPCU.findById(req.params.id);
-    
+
     if (!solarPCU) {
       return res.status(404).json({
         success: false,
         message: 'Solar PCU not found'
       });
     }
-    
+
     // Delete image if exists
     if (solarPCU.image) {
       await fileUpload.deleteFile(solarPCU.image);
     }
-    
+
     await SolarPCU.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       data: {},

@@ -20,7 +20,11 @@ const solarPVRoutes = require('./routes/solar-pv.routes');
 const solarPCURoutes = require('./routes/solar-pcu.routes');
 const inverterRoutes = require('./routes/inverter.routes');
 const batteryRoutes = require('./routes/battery.routes');
-// const adminRoutes = require('./routes/admin.routes');
+const reviewRoutes = require('./routes/review.routes')
+const cartRoutes = require('./routes/cart.routes')
+const leadRoutes = require('./routes/lead.routes')
+const invoiceRoutes = require('./routes/invoice.routes')
+const orderRoutes = require('./routes/order.routes')
 
 // Initialize express app
 const app = express();
@@ -63,6 +67,11 @@ app.use('/api/solar-street-lights', solarStreetLightRoutes);
 app.use('/api/solar-pv-modules', solarPVRoutes);
 app.use('/api/solar-pcus', solarPCURoutes);
 app.use('/api/inverters', inverterRoutes);
+app.use('/api/reviews', reviewRoutes)
+app.use('/api/cart', cartRoutes)
+app.use('/api/leads', leadRoutes)
+app.use('/api/invoices', invoiceRoutes)
+app.use('/api/orders', orderRoutes)
 // app.use('/api/admin', adminRoutes);
 
 // Root route

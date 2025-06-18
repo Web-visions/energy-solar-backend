@@ -3,23 +3,74 @@ const UPS = require('../models/ups.model');
 const SolarPCU = require('../models/solor-pcu.model');
 const SolarPV = require('../models/solor-pv.model');
 const SolarStreetLight = require('../models/solor-street-light.model');
-const Inverter = require('../models/invertor.model');
-const Battery = require('../models/battery.model');
+const Inverter = require('../models/invertor.model.');
+const Battery = require('../models/battery');
+
+// Helper function to populate cart with detailed product information
+async function populateCartDetails(cart) {
+    // Manually populate product details for each item
+    const populatedItems = await Promise.all(
+        cart.items.map(async (item) => {
+            let product;
+            switch (item.productType) {
+                case 'ups':
+                    product = await UPS.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images sellingPrice mrp price type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+                case 'solar-pcu':
+                    product = await SolarPCU.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images sellingPrice mrp price type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+                case 'solar-pv':
+                    product = await SolarPV.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images price type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+                case 'solar-street-light':
+                    product = await SolarStreetLight.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images price type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+                case 'inverter':
+                    product = await Inverter.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images sellingPrice mrp priceWithoutOldBattery priceWithOldBattery type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+                case 'battery':
+                    product = await Battery.findById(item.productId)
+                        .populate('brand', 'name logo')
+                        .select('name image images sellingPrice mrp priceWithoutOldBattery priceWithOldBattery type category brand modelName capacity AH batteryType wattage power dimension warranty manufacturer sku packer importer replacementPolicy outputPowerWattage inputVoltage outputVoltage inputFreq outputFreq nominalFilledWeight');
+                    break;
+            }
+
+            return {
+                ...item.toObject(),
+                productId: product
+            };
+        })
+    );
+
+    return {
+        ...cart.toObject(),
+        items: populatedItems
+    };
+}
 
 // Get cart for user
 exports.getCart = async (req, res) => {
     try {
-        const cart = await Cart.findOne({ user: req.user._id })
-            .populate({
-                path: 'items.productId',
-                select: 'name image sellingPrice mrp'
-            });
+        const cart = await Cart.findOne({ user: req.user._id });
 
         if (!cart) {
             return res.json({ items: [], totalAmount: 0 });
         }
 
-        res.json(cart);
+        // Populate detailed product information before sending response
+        const populatedCart = await populateCartDetails(cart);
+
+        res.json(populatedCart);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -80,7 +131,11 @@ exports.addToCart = async (req, res) => {
         cart.totalAmount = await calculateTotalAmount(cart.items);
 
         await cart.save();
-        res.json(cart);
+
+        // Populate detailed product information before sending response
+        const populatedCart = await populateCartDetails(cart);
+
+        res.json(populatedCart);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -109,7 +164,10 @@ exports.updateCartItem = async (req, res) => {
         cart.totalAmount = await calculateTotalAmount(cart.items);
         await cart.save();
 
-        res.json(cart);
+        // Populate detailed product information before sending response
+        const populatedCart = await populateCartDetails(cart);
+
+        res.json(populatedCart);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -132,7 +190,10 @@ exports.removeFromCart = async (req, res) => {
         cart.totalAmount = await calculateTotalAmount(cart.items);
         await cart.save();
 
-        res.json(cart);
+        // Populate detailed product information before sending response
+        const populatedCart = await populateCartDetails(cart);
+
+        res.json(populatedCart);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -164,7 +225,17 @@ async function calculateTotalAmount(items) {
                 break;
         }
         if (product) {
-            total += (product.sellingPrice || product.mrp) * item.quantity;
+            let price = 0;
+
+            if (item.productType.startsWith('solar-')) {
+                // Solar products have only 'price' field
+                price = product.price || 0;
+            } else {
+                // For UPS, Battery, Inverter - use sellingPrice if available, otherwise mrp
+                price = product.sellingPrice || product.mrp || 0;
+            }
+
+            total += price * item.quantity;
         }
     }
     return total;

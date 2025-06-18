@@ -14,14 +14,10 @@ const CitySchema = new mongoose.Schema({
     trim: true,
     maxlength: [50, 'State name cannot be more than 50 characters']
   },
-  pincode: {
-    type: String,
-    trim: true,
-    maxlength: [10, 'Pincode cannot be more than 10 characters']
-  },
   deliveryCharge: {
     type: Number,
-    default: 0
+    default: 0,
+    min: [0, 'Delivery charge cannot be negative']
   },
   estimatedDeliveryDays: {
     type: String,

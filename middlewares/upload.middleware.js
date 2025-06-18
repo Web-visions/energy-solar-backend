@@ -27,7 +27,7 @@ const upload = multer({
 exports.uploadSingle = (fieldName) => {
   return (req, res, next) => {
     const uploadMiddleware = upload.single(fieldName);
-    
+
     uploadMiddleware(req, res, (err) => {
       if (err instanceof multer.MulterError) {
         // A Multer error occurred when uploading
@@ -42,12 +42,12 @@ exports.uploadSingle = (fieldName) => {
           message: err.message || 'File upload failed'
         });
       }
-      
+
       // If no file was uploaded, continue without error
       if (!req.file) {
         return next();
       }
-      
+
       next();
     });
   };
@@ -57,7 +57,7 @@ exports.uploadSingle = (fieldName) => {
 exports.uploadMultiple = (fieldName, maxCount = 5) => {
   return (req, res, next) => {
     const uploadMiddleware = upload.array(fieldName, maxCount);
-    
+
     uploadMiddleware(req, res, (err) => {
       if (err instanceof multer.MulterError) {
         // A Multer error occurred when uploading
@@ -72,12 +72,12 @@ exports.uploadMultiple = (fieldName, maxCount = 5) => {
           message: err.message || 'File upload failed'
         });
       }
-      
+
       // If no files were uploaded, continue without error
       if (!req.files || req.files.length === 0) {
         return next();
       }
-      
+
       next();
     });
   };

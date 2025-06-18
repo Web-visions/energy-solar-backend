@@ -130,7 +130,7 @@ exports.createCity = async (req, res) => {
 exports.updateCity = async (req, res) => {
   try {
     const { name, state, pincode, deliveryCharge, estimatedDeliveryDays } = req.body;
-    
+
     let city = await City.findById(req.params.id);
 
     if (!city) {
@@ -142,12 +142,12 @@ exports.updateCity = async (req, res) => {
 
     // Check if name and state are being changed and if they already exist
     if ((name && name !== city.name) || (state && state !== city.state)) {
-      const existingCity = await City.findOne({ 
-        name: name || city.name, 
+      const existingCity = await City.findOne({
+        name: name || city.name,
         state: state || city.state,
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingCity) {
         return res.status(400).json({
           success: false,
@@ -192,7 +192,7 @@ exports.updateCity = async (req, res) => {
 exports.toggleCityStatus = async (req, res) => {
   try {
     const { isActive } = req.body;
-    
+
     let city = await City.findById(req.params.id);
 
     if (!city) {
@@ -251,6 +251,26 @@ exports.deleteCity = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Server Error'
+    });
+  }
+};
+
+// Get active cities for checkout
+exports.getActiveCities = async (req, res) => {
+  try {
+    const cities = await City.find({ isActive: true })
+      .select('name state deliveryCharge estimatedDeliveryDays')
+      .sort({ name: 1 });
+
+    res.json({
+      success: true,
+      data: cities
+    });
+  } catch (error) {
+    console.error('Error fetching active cities:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active cities'
     });
   }
 };

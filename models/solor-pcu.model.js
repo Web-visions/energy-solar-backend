@@ -16,6 +16,7 @@ const solarPCUSchema = new mongoose.Schema({
   warranty: String,
   dimension: String,
   weight: Number,
+  price: { type: Number, required: true },
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 

@@ -12,10 +12,10 @@ exports.getAllSolarPVModules = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
-    
+
     // Create base query
     const query = {};
-    
+
     // Search functionality
     if (search) {
       query.$or = [
@@ -28,32 +28,32 @@ exports.getAllSolarPVModules = async (req, res) => {
         { importer: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Filter by category
     if (req.query.category) {
       query.category = req.query.category;
     }
-    
+
     // Filter by brand
     if (req.query.brand) {
       query.brand = { $regex: req.query.brand, $options: 'i' };
     }
-    
+
     // Filter by type
     if (req.query.type) {
       query.type = req.query.type;
     }
-    
+
     // Filter by weight range
     if (req.query.minWeight || req.query.maxWeight) {
       query.weight = {};
       if (req.query.minWeight) query.weight.$gte = Number(req.query.minWeight);
       if (req.query.maxWeight) query.weight.$lte = Number(req.query.maxWeight);
     }
-    
+
     // Get total count with filters applied
     const total = await SolarPVModule.countDocuments(query);
-    
+
     // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
@@ -64,7 +64,7 @@ exports.getAllSolarPVModules = async (req, res) => {
       // Default sort by createdAt desc
       sortOption = { createdAt: -1 };
     }
-    
+
     // Query with pagination, filtering, and sorting
     const solarPVModules = await SolarPVModule.find(query)
       .populate('category', 'name')
@@ -72,7 +72,7 @@ exports.getAllSolarPVModules = async (req, res) => {
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: solarPVModules.length,
@@ -100,15 +100,15 @@ exports.getSolarPVModule = async (req, res) => {
   try {
     const solarPVModule = await SolarPVModule.findById(req.params.id)
       .populate('category', 'name')
-      // .populate('reviews');
-    
+    // .populate('reviews');
+
     if (!solarPVModule) {
       return res.status(404).json({
         success: false,
         message: 'Solar PV Module not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: solarPVModule
@@ -141,7 +141,8 @@ exports.createSolarPVModule = async (req, res) => {
       packer,
       importer,
       replacementPolicy,
-      staticTags
+      staticTags,
+      price
     } = req.body;
 
     // Validate required fields
@@ -156,6 +157,13 @@ exports.createSolarPVModule = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Name is required'
+      });
+    }
+
+    if (!price || price <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid price is required'
       });
     }
 
@@ -193,9 +201,10 @@ exports.createSolarPVModule = async (req, res) => {
       importer,
       replacementPolicy,
       staticTags: staticTags ? JSON.parse(staticTags) : [],
+      price: Number(price),
       images: imagePaths.length > 0 ? imagePaths : undefined
     });
-    
+
     res.status(201).json({
       success: true,
       data: solarPVModule
@@ -215,21 +224,21 @@ exports.createSolarPVModule = async (req, res) => {
 exports.updateSolarPVModule = async (req, res) => {
   try {
     let solarPVModule = await SolarPVModule.findById(req.params.id);
-    
+
     if (!solarPVModule) {
       return res.status(404).json({
         success: false,
         message: 'Solar PV Module not found'
       });
     }
-    
+
     // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== solarPVModule.name) {
       const existingSolarPVModule = await SolarPVModule.findOne({
         name: req.body.name,
         _id: { $ne: req.params.id }
       });
-      
+
       if (existingSolarPVModule) {
         return res.status(400).json({
           success: false,
@@ -263,7 +272,8 @@ exports.updateSolarPVModule = async (req, res) => {
 
     // Convert numeric fields
     if (req.body.weight) req.body.weight = Number(req.body.weight);
-    
+    if (req.body.price) req.body.price = Number(req.body.price);
+
     // Update Solar PV Module
     solarPVModule = await SolarPVModule.findByIdAndUpdate(
       req.params.id,
@@ -273,7 +283,7 @@ exports.updateSolarPVModule = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: solarPVModule
@@ -293,23 +303,23 @@ exports.updateSolarPVModule = async (req, res) => {
 exports.deleteSolarPVModule = async (req, res) => {
   try {
     const solarPVModule = await SolarPVModule.findById(req.params.id);
-    
+
     if (!solarPVModule) {
       return res.status(404).json({
         success: false,
         message: 'Solar PV Module not found'
       });
     }
-    
+
     // Delete images if they exist
     if (solarPVModule.images && solarPVModule.images.length > 0) {
       for (const image of solarPVModule.images) {
         await fileUpload.deleteFile(image);
       }
     }
-    
+
     await SolarPVModule.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       data: {},
