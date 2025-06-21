@@ -3,7 +3,7 @@ const UPS = require('../models/ups.model');
 const SolarPCU = require('../models/solor-pcu.model');
 const SolarPV = require('../models/solor-pv.model');
 const SolarStreetLight = require('../models/solor-street-light.model');
-const Inverter = require('../models/invertor.model.');
+const Inverter = require('../models/inverter.model');
 const Battery = require('../models/battery');
 
 // Helper function to populate cart with detailed product information

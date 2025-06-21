@@ -1,10 +1,22 @@
 const Order = require('../models/order.model');
+const puppeteer = require('puppeteer');
 const Battery = require('../models/battery');
 const UPS = require('../models/ups.model');
-const Inverter = require('../models/invertor.model..js');
+const Inverter = require('../models/inverter.model.js');
 const SolarPV = require('../models/solor-pv.model.js');
 const SolarPCU = require('../models/solor-pcu.model.js');
 const SolarStreetLight = require('../models/solor-street-light.model.js');
+
+// --- Data Access Helpers ---
+const getStatus = (ord) => ord.orderStatus ?? ord.status;
+const getTotal = (ord) => ord.totalAmount ?? ord.pricing?.total;
+const getSubtotal = (ord) => ord.pricing?.subtotal ?? ord.items.reduce((sum, item) => sum + (item.price * (item.quantity ?? 1)), 0);
+const getDeliveryCharge = (ord) => ord.pricing?.deliveryCharge ?? 0;
+const getTax = (ord) => ord.pricing?.tax ?? 0;
+const getShippingInfo = (ord) => ord.shippingInfo ?? ord.shippingDetails;
+const getPaymentInfo = (ord) => ord.paymentInfo ?? ord.paymentDetails;
+const getItemProduct = (item) => item.product ?? item.productId;
+const getItemTotalPrice = (item) => item.totalPrice ?? (item.price * (item.quantity ?? 1));
 
 // Get order by ID with populated product details
 const getOrderWithProducts = async (orderId) => {
@@ -68,20 +80,11 @@ const getOrderWithProducts = async (orderId) => {
 
 // Generate invoice HTML
 const generateInvoiceHTML = (order) => {
-    const formatDate = (date) => {
-        return new Date(date).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-        });
-    };
+    const shipping = getShippingInfo(order);
+    const payment = getPaymentInfo(order);
 
-    const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR'
-        }).format(amount);
-    };
+    const formatDate = (date) => new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const formatCurrency = (amount) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
 
     return `
 <!DOCTYPE html>
@@ -288,14 +291,14 @@ const generateInvoiceHTML = (order) => {
                 <div class="invoice-number">Invoice #${order.orderNumber}</div>
                 <div class="invoice-date">Date: ${formatDate(order.createdAt)}</div>
                 <div style="margin-top: 10px;">
-                    <span class="status-badge status-${order.status}">${order.status}</span>
+                    <span class="status-badge status-${getStatus(order)}">${getStatus(order)}</span>
                 </div>
             </div>
             <div style="text-align: right;">
                 <div style="font-weight: bold; margin-bottom: 5px;">Order Details</div>
                 <div>Order Date: ${formatDate(order.createdAt)}</div>
-                <div>Payment: ${order.paymentDetails.method.toUpperCase()}</div>
-                ${order.paymentDetails.transactionId ? `<div>Transaction ID: ${order.paymentDetails.transactionId}</div>` : ''}
+                <div>Payment: ${payment.method.toUpperCase()}</div>
+                ${payment.transactionId ? `<div>Transaction ID: ${payment.transactionId}</div>` : ''}
             </div>
         </div>
         
@@ -304,21 +307,20 @@ const generateInvoiceHTML = (order) => {
             <div class="bill-to">
                 <div class="section-title">Bill To:</div>
                 <div class="address-details">
-                    <div style="font-weight: bold;">${order.shippingDetails.fullName}</div>
-                    <div>${order.shippingDetails.email}</div>
-                    <div>${order.shippingDetails.phone}</div>
-                    <div>${order.shippingDetails.address}</div>
-                    <div>${order.shippingDetails.city}, ${order.shippingDetails.state}</div>
-                    ${order.shippingDetails.landmark ? `<div>Landmark: ${order.shippingDetails.landmark}</div>` : ''}
+                    <div style="font-weight: bold;">${shipping.fullName}</div>
+                    <div>${shipping.address}</div>
+                    <div>${shipping.city}, ${shipping.state}</div>
+                    <div>${shipping.phone}</div>
+                    <div>${shipping.email}</div>
                 </div>
             </div>
             <div class="ship-to">
                 <div class="section-title">Ship To:</div>
                 <div class="address-details">
-                    <div style="font-weight: bold;">${order.shippingDetails.fullName}</div>
-                    <div>${order.shippingDetails.address}</div>
-                    <div>${order.shippingDetails.city}, ${order.shippingDetails.state}</div>
-                    ${order.shippingDetails.landmark ? `<div>Landmark: ${order.shippingDetails.landmark}</div>` : ''}
+                    <div style="font-weight: bold;">${shipping.fullName}</div>
+                    <div>${shipping.address}</div>
+                    <div>${shipping.city}, ${shipping.state}</div>
+                    ${shipping.landmark ? `<div>Landmark: ${shipping.landmark}</div>` : ''}
                 </div>
             </div>
         </div>
@@ -337,31 +339,31 @@ const generateInvoiceHTML = (order) => {
                 <tbody>
                     ${order.items.map(item => {
         // Check if product has MRP for cut price display
-        const hasMRP = item.productId.mrp && item.productId.mrp > item.price;
-        const discount = hasMRP ? item.productId.mrp - item.price : 0;
+        const hasMRP = getItemProduct(item).mrp && getItemProduct(item).mrp > item.price;
+        const discount = hasMRP ? getItemProduct(item).mrp - item.price : 0;
 
         return `
                         <tr>
                             <td>
-                                <div class="product-name">${item.productId.name}</div>
+                                <div class="product-name">${getItemProduct(item).name}</div>
                                 <div class="product-details">
-                                    Brand: ${item.productId.brand?.name || 'N/A'}
-                                    ${item.productId.modelName ? `<br>Model: ${item.productId.modelName}` : ''}
-                                    ${item.productId.capacity ? `<br>Capacity: ${item.productId.capacity}VA` : ''}
-                                    ${item.productId.AH ? `<br>Capacity: ${item.productId.AH}Ah` : ''}
-                                    ${item.productId.wattage ? `<br>Wattage: ${item.productId.wattage}W` : ''}
-                                    ${item.productId.power ? `<br>Power: ${item.productId.power}W` : ''}
-                                    ${item.productId.batteryType ? `<br>Type: ${item.productId.batteryType}` : ''}
-                                    ${item.productId.warranty ? `<br>Warranty: ${item.productId.warranty}` : ''}
+                                    Brand: ${getItemProduct(item).brand?.name || 'N/A'}
+                                    ${getItemProduct(item).modelName ? `<br>Model: ${getItemProduct(item).modelName}` : ''}
+                                    ${getItemProduct(item).capacity ? `<br>Capacity: ${getItemProduct(item).capacity}VA` : ''}
+                                    ${getItemProduct(item).AH ? `<br>Capacity: ${getItemProduct(item).AH}Ah` : ''}
+                                    ${getItemProduct(item).wattage ? `<br>Wattage: ${getItemProduct(item).wattage}W` : ''}
+                                    ${getItemProduct(item).power ? `<br>Power: ${getItemProduct(item).power}W` : ''}
+                                    ${getItemProduct(item).batteryType ? `<br>Type: ${getItemProduct(item).batteryType}` : ''}
+                                    ${getItemProduct(item).warranty ? `<br>Warranty: ${getItemProduct(item).warranty}` : ''}
                                     ${hasMRP ? `<br><span style="color: #dc2626; font-weight: bold;">Save ₹${formatCurrency(discount)}</span>` : ''}
                                 </div>
                             </td>
                             <td class="quantity">${item.quantity}</td>
                             <td class="price">
-                                ${hasMRP ? `<div style="text-decoration: line-through; color: #6b7280; font-size: 12px;">${formatCurrency(item.productId.mrp)}</div>` : ''}
+                                ${hasMRP ? `<div style="text-decoration: line-through; color: #6b7280; font-size: 12px;">${formatCurrency(getItemProduct(item).mrp)}</div>` : ''}
                                 <div>${formatCurrency(item.price)}</div>
                             </td>
-                            <td class="price">${formatCurrency(item.totalPrice)}</td>
+                            <td class="price">${formatCurrency(getItemTotalPrice(item))}</td>
                         </tr>
                         `;
     }).join('')}
@@ -373,19 +375,19 @@ const generateInvoiceHTML = (order) => {
         <div class="total-section">
             <div class="total-row">
                 <span>Subtotal:</span>
-                <span>${formatCurrency(order.pricing.subtotal)}</span>
+                <span>${formatCurrency(getSubtotal(order))}</span>
             </div>
             <div class="total-row">
                 <span>Delivery Charges:</span>
-                <span>${order.pricing.deliveryCharge > 0 ? formatCurrency(order.pricing.deliveryCharge) : 'Free'}</span>
+                <span>${formatCurrency(getDeliveryCharge(order))}</span>
             </div>
             <div class="total-row">
                 <span>Tax:</span>
-                <span>${formatCurrency(order.pricing.tax)}</span>
+                <span>${formatCurrency(getTax(order))}</span>
             </div>
             <div class="total-row final">
                 <span>Total Amount:</span>
-                <span>${formatCurrency(order.pricing.total)}</span>
+                <span>${formatCurrency(getTotal(order))}</span>
             </div>
         </div>
         

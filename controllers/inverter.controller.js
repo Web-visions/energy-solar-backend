@@ -1,4 +1,4 @@
-const Inverter = require('../models/invertor.model..js');
+const Inverter = require('../models/inverter.model');
 const mongoose = require('mongoose');
 const fileUpload = require('../utils/fileUpload');
 
@@ -12,10 +12,10 @@ exports.getAllInverters = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
-    
+
     // Create base query
     const query = {};
-    
+
     // Search functionality
     if (search) {
       query.$or = [
@@ -23,29 +23,29 @@ exports.getAllInverters = async (req, res) => {
         { description: { $regex: search, $options: 'i' } }
       ];
     }
-    
+
     // Filter by category
     if (req.query.category) {
       query.category = req.query.category;
     }
-    
+
     // Filter by capacity range
     if (req.query.minCapacity || req.query.maxCapacity) {
       query.capacity = {};
       if (req.query.minCapacity) query.capacity.$gte = Number(req.query.minCapacity);
       if (req.query.maxCapacity) query.capacity.$lte = Number(req.query.maxCapacity);
     }
-    
+
     // Filter by price range (MRP)
     if (req.query.minPrice || req.query.maxPrice) {
       query.mrp = {};
       if (req.query.minPrice) query.mrp.$gte = Number(req.query.minPrice);
       if (req.query.maxPrice) query.mrp.$lte = Number(req.query.maxPrice);
     }
-    
+
     // Get total count with filters applied
     const total = await Inverter.countDocuments(query);
-    
+
     // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
@@ -56,7 +56,7 @@ exports.getAllInverters = async (req, res) => {
       // Default sort by createdAt desc
       sortOption = { createdAt: -1 };
     }
-    
+
     // Query with pagination, filtering, and sorting
     const inverters = await Inverter.find(query)
       .populate('category', 'name')
@@ -64,7 +64,7 @@ exports.getAllInverters = async (req, res) => {
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
-    
+
     res.status(200).json({
       success: true,
       count: inverters.length,
@@ -92,15 +92,15 @@ exports.getInverter = async (req, res) => {
   try {
     const inverter = await Inverter.findById(req.params.id)
       .populate('category', 'name')
-      // .populate('reviews');
-    
+    // .populate('reviews');
+
     if (!inverter) {
       return res.status(404).json({
         success: false,
         message: 'Inverter not found'
       });
     }
-    
+
     res.status(200).json({
       success: true,
       data: inverter
@@ -156,12 +156,12 @@ exports.createInverter = async (req, res) => {
     }
 
     const foundBrand = await mongoose.model('Brand').findById(brand);
-if (!foundBrand) {
-  return res.status(404).json({
-    success: false,
-    message: 'Brand not found'
-  });
-}
+    if (!foundBrand) {
+      return res.status(404).json({
+        success: false,
+        message: 'Brand not found'
+      });
+    }
 
     // Check if Inverter with this name already exists
     const existingInverter = await Inverter.findOne({ name });
@@ -193,7 +193,7 @@ if (!foundBrand) {
       priceWithOldBattery: priceWithOldBattery ? Number(priceWithOldBattery) : undefined,
       image: imagePath
     });
-    
+
     res.status(201).json({
       success: true,
       data: inverter
@@ -213,14 +213,14 @@ if (!foundBrand) {
 exports.updateInverter = async (req, res) => {
   try {
     let inverter = await Inverter.findById(req.params.id);
-    
+
     if (!inverter) {
       return res.status(404).json({
         success: false,
         message: 'Inverter not found'
       });
     }
-    
+
     // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== inverter.name) {
       const existingInverter = await Inverter.findOne({
@@ -237,7 +237,7 @@ exports.updateInverter = async (req, res) => {
           });
         }
       }
-      
+
       if (existingInverter) {
         return res.status(400).json({
           success: false,
@@ -262,7 +262,7 @@ exports.updateInverter = async (req, res) => {
     if (req.body.mrp) req.body.mrp = Number(req.body.mrp);
     if (req.body.priceWithoutOldBattery) req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
     if (req.body.priceWithOldBattery) req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
-    
+
     // Update Inverter
     inverter = await Inverter.findByIdAndUpdate(
       req.params.id,
@@ -272,7 +272,7 @@ exports.updateInverter = async (req, res) => {
         runValidators: true
       }
     );
-    
+
     res.status(200).json({
       success: true,
       data: inverter
@@ -292,21 +292,21 @@ exports.updateInverter = async (req, res) => {
 exports.deleteInverter = async (req, res) => {
   try {
     const inverter = await Inverter.findById(req.params.id);
-    
+
     if (!inverter) {
       return res.status(404).json({
         success: false,
         message: 'Inverter not found'
       });
     }
-    
+
     // Delete image if exists
     if (inverter.image) {
       await fileUpload.deleteFile(inverter.image);
     }
-    
+
     await Inverter.findByIdAndDelete(req.params.id);
-    
+
     res.status(200).json({
       success: true,
       data: {},

@@ -1,11 +1,11 @@
 const Order = require('../models/order.model');
 const Cart = require('../models/cart.model');
-const UPS = require('../models/ups.model');
-const SolarPCU = require('../models/solor-pcu.model');
-const SolarPV = require('../models/solor-pv.model');
-const SolarStreetLight = require('../models/solor-street-light.model');
-const Inverter = require('../models/invertor.model.');
-const Battery = require('../models/battery');
+const UPS = require('../models/ups.model.js');
+const SolarPCU = require('../models/solor-pcu.model.js');
+const SolarPV = require('../models/solor-pv.model.js');
+const SolarStreetLight = require('../models/solor-street-light.model.js');
+const Inverter = require('../models/inverter.model.js')
+const Battery = require('../models/battery.js');
 
 // Helper function to populate product details
 async function populateProductDetails(productType, productId) {
@@ -45,97 +45,95 @@ async function populateProductDetails(productType, productId) {
     return product;
 }
 
+// Helper to manually populate product details in orders
+const manuallyPopulateProductDetails = async (orders) => {
+    const isSingle = !Array.isArray(orders);
+    const ordersArray = isSingle ? [orders] : orders;
+
+    const populatedOrders = await Promise.all(ordersArray.map(async (order) => {
+        const orderObj = order.toObject();
+        orderObj.items = await Promise.all(orderObj.items.map(async (item) => {
+            if (!item.product) return item;
+            let productDoc;
+            const id = item.product;
+            switch (item.productType) {
+                case 'ups': productDoc = await UPS.findById(id).lean(); break;
+                case 'solar-pcu': productDoc = await SolarPCU.findById(id).lean(); break;
+                case 'solar-pv': productDoc = await SolarPV.findById(id).lean(); break;
+                case 'solar-street-light': productDoc = await SolarStreetLight.findById(id).lean(); break;
+                case 'inverter': productDoc = await Inverter.findById(id).lean(); break;
+                case 'battery': productDoc = await Battery.findById(id).lean(); break;
+                default: productDoc = null;
+            }
+            item.product = productDoc;
+            return item;
+        }));
+        return orderObj;
+    }));
+
+    return isSingle ? populatedOrders[0] : populatedOrders;
+};
+
 // Create new order
 exports.createOrder = async (req, res) => {
     try {
-        const { cartId, shippingDetails, paymentMethod, transactionId } = req.body;
+        const { shippingInfo, paymentMethod } = req.body;
         const userId = req.user.id;
 
-        // Get cart with populated items
+        if (paymentMethod !== 'cod') {
+            return res.status(400).json({
+                success: false,
+                message: 'This endpoint is for COD orders only.'
+            });
+        }
+
         const cart = await Cart.findOne({ user: userId });
 
         if (!cart || cart.items.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Cart is empty'
-            });
+            return res.status(400).json({ success: false, message: 'Cart is empty' });
         }
 
-        // Populate product details and calculate totals
-        let subtotal = 0;
         const orderItems = [];
-
         for (const item of cart.items) {
             const product = await populateProductDetails(item.productType, item.productId);
-
             if (!product) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Product not found for ${item.productType}`
-                });
+                return res.status(400).json({ success: false, message: `Product not found for ${item.productType}` });
             }
 
-            let price = 0;
-
-            if (item.productType.startsWith('solar-')) {
-                // Solar products have only 'price' field
-                price = product.price || 0;
-            } else {
-                // For UPS, Battery, Inverter - use sellingPrice if available, otherwise mrp
-                price = product.sellingPrice || product.mrp || 0;
-            }
-
-            const totalPrice = price * item.quantity;
-            subtotal += totalPrice;
+            let price = product.price || product.sellingPrice || product.mrp || 0;
 
             orderItems.push({
+                product: item.productId,
                 productType: item.productType,
-                productId: item.productId,
                 quantity: item.quantity,
-                price: price,
-                totalPrice: totalPrice
+                price: price
             });
         }
 
-        // Get delivery charge from city
-        const deliveryCharge = 0; // This should be fetched from city data
-        const tax = 0; // Calculate tax if needed
-        const total = subtotal + deliveryCharge + tax;
-
-        // Create order
-        const order = new Order({
+        const newOrder = new Order({
             user: userId,
             items: orderItems,
-            shippingDetails,
-            paymentDetails: {
-                method: paymentMethod,
-                transactionId: transactionId || null,
-                status: paymentMethod === 'cod' ? 'pending' : 'completed'
+            totalAmount: cart.totalAmount,
+            shippingInfo: shippingInfo,
+            paymentInfo: {
+                method: 'cod'
             },
-            pricing: {
-                subtotal,
-                deliveryCharge,
-                tax,
-                total
-            },
-            status: paymentMethod === 'cod' ? 'pending' : 'confirmed'
+            paymentStatus: 'Pending',
         });
 
-        await order.save();
+        await newOrder.save();
 
-        // Clear cart after successful order
-        await Cart.findOneAndUpdate(
-            { user: userId },
-            { $set: { items: [] } }
-        );
+        await Cart.findByIdAndUpdate(cart._id, {
+            $set: { items: [], totalAmount: 0 },
+        });
 
         res.status(201).json({
             success: true,
             message: 'Order created successfully',
             data: {
-                orderId: order._id,
-                orderNumber: order.orderNumber,
-                total: order.pricing.total
+                orderId: newOrder._id,
+                orderNumber: newOrder.orderNumber,
+                total: newOrder.totalAmount
             }
         });
 
@@ -157,14 +155,15 @@ exports.getUserOrders = async (req, res) => {
         const orders = await Order.find({ user: userId })
             .sort({ createdAt: -1 })
             .limit(limit * 1)
-            .skip((page - 1) * limit)
-            .populate('items.productId');
+            .skip((page - 1) * limit);
+
+        const populatedOrders = await manuallyPopulateProductDetails(orders);
 
         const total = await Order.countDocuments({ user: userId });
 
         res.json({
             success: true,
-            data: orders,
+            data: populatedOrders,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -188,8 +187,7 @@ exports.getOrderById = async (req, res) => {
         const { orderId } = req.params;
         const userId = req.user.id;
 
-        const order = await Order.findOne({ _id: orderId, user: userId })
-            .populate('items.productId');
+        const order = await Order.findOne({ _id: orderId, user: userId });
 
         if (!order) {
             return res.status(404).json({
@@ -198,9 +196,11 @@ exports.getOrderById = async (req, res) => {
             });
         }
 
+        const populatedOrder = await manuallyPopulateProductDetails(order);
+
         res.json({
             success: true,
-            data: order
+            data: populatedOrder
         });
 
     } catch (error) {
@@ -219,13 +219,13 @@ exports.getAllOrders = async (req, res) => {
 
         const query = {};
         if (status && status !== 'all') {
-            query.status = status;
+            query.orderStatus = status;
         }
         if (search) {
             query.$or = [
                 { orderNumber: { $regex: search, $options: 'i' } },
-                { 'shippingDetails.fullName': { $regex: search, $options: 'i' } },
-                { 'shippingDetails.email': { $regex: search, $options: 'i' } }
+                { 'shippingInfo.fullName': { $regex: search, $options: 'i' } },
+                { 'shippingInfo.email': { $regex: search, $options: 'i' } }
             ];
         }
 
@@ -233,14 +233,15 @@ exports.getAllOrders = async (req, res) => {
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit)
-            .populate('user', 'name email')
-            .populate('items.productId');
+            .populate('user', 'name email');
+
+        const populatedOrders = await manuallyPopulateProductDetails(orders);
 
         const total = await Order.countDocuments(query);
 
         res.json({
             success: true,
-            data: orders,
+            data: populatedOrders,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),
@@ -267,7 +268,7 @@ exports.updateOrderStatus = async (req, res) => {
         const order = await Order.findByIdAndUpdate(
             orderId,
             {
-                status,
+                orderStatus: status,
                 notes: notes
             },
             { new: true }

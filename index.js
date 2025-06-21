@@ -25,6 +25,7 @@ const cartRoutes = require('./routes/cart.routes')
 const leadRoutes = require('./routes/lead.routes')
 const invoiceRoutes = require('./routes/invoice.routes')
 const orderRoutes = require('./routes/order.routes')
+const paymentRoutes = require('./routes/payment.routes')
 
 // Initialize express app
 const app = express();
@@ -72,6 +73,7 @@ app.use('/api/cart', cartRoutes)
 app.use('/api/leads', leadRoutes)
 app.use('/api/invoices', invoiceRoutes)
 app.use('/api/orders', orderRoutes)
+app.use('/api/payment', paymentRoutes)
 // app.use('/api/admin', adminRoutes);
 
 // Root route
