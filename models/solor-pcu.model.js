@@ -8,7 +8,6 @@ const solarPCUSchema = new mongoose.Schema({
   description: String,
   features: [String],
   image: String,
-  brand: String,
   type: { type: String, enum: ['hybrid pcu', 'off-grid pcu', 'on grid pcu'] },
   wattage: Number,
   modelName: String,

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const mongoosePaginate = require('mongoose-paginate-v2');
 
 const reviewSchema = new mongoose.Schema({
     user: {
@@ -14,7 +15,7 @@ const reviewSchema = new mongoose.Schema({
     productType: {
         type: String,
         required: true,
-        enum: ['Battery', 'ups', 'Inverter', 'SolarPCU', 'SolarPV', 'SolarStreetLight']
+        enum: ['battery', 'ups', 'inverter', 'solar-pcu', 'solar-pv', 'solar-street-light']
     },
     rating: {
         type: Number,
@@ -40,6 +41,8 @@ const reviewSchema = new mongoose.Schema({
 
 // Prevent duplicate reviews from the same user for the same product
 reviewSchema.index({ user: 1, product: 1 }, { unique: true });
+
+reviewSchema.plugin(mongoosePaginate);
 
 const Review = mongoose.model('Review', reviewSchema);
 

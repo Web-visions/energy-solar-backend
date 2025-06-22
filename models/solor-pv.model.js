@@ -7,7 +7,6 @@ const solarPVModuleSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: String,
   images: [String],
-  brand: String,
   modelName: String,
   sku: String,
   type: { type: String, enum: ['polycrystalline', 'monocrystalline'] },

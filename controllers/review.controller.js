@@ -4,11 +4,11 @@ const { saveFile, deleteFile } = require('../utils/fileUpload');
 // Create a new review
 exports.createReview = async (req, res) => {
     try {
-        const { productId, productType, rating, comment } = req.body;
+        const { product, productType, rating, comment } = req.body;
         const userId = req.user._id;
 
         // Check if user has already reviewed this product
-        const existingReview = await Review.findOne({ user: userId, product: productId });
+        const existingReview = await Review.findOne({ user: userId, product: product });
         if (existingReview) {
             return res.status(400).json({ message: 'You have already reviewed this product' });
         }
@@ -16,6 +16,9 @@ exports.createReview = async (req, res) => {
         // Handle image uploads if any
         let images = [];
         if (req.files && req.files.length > 0) {
+            if (req.files.length > 4) {
+                return res.status(400).json({ message: 'You can upload a maximum of 4 images.' });
+            }
             images = await Promise.all(
                 req.files.map(file => saveFile(file))
             );
@@ -23,7 +26,7 @@ exports.createReview = async (req, res) => {
 
         const review = new Review({
             user: userId,
-            product: productId,
+            product: product,
             productType,
             rating,
             comment,
@@ -49,13 +52,33 @@ exports.createReview = async (req, res) => {
 exports.getProductReviews = async (req, res) => {
     try {
         const { productId } = req.params;
-        const reviews = await Review.find({ product: productId })
-            .populate('user', 'name email')
-            .sort({ createdAt: -1 });
+        const { page = 1, limit = 10 } = req.query;
+
+        const options = {
+            page: parseInt(page, 10),
+            limit: parseInt(limit, 10),
+            populate: {
+                path: 'user',
+                select: 'name email'
+            },
+            sort: { createdAt: -1 }
+        };
+
+        const reviews = await Review.paginate({ product: productId }, options);
 
         res.status(200).json({
             success: true,
-            data: reviews
+            data: reviews.docs,
+            pagination: {
+                total: reviews.totalDocs,
+                limit: reviews.limit,
+                page: reviews.page,
+                totalPages: reviews.totalPages,
+                hasNextPage: reviews.hasNextPage,
+                nextPage: reviews.nextPage,
+                hasPrevPage: reviews.hasPrevPage,
+                prevPage: reviews.prevPage
+            }
         });
     } catch (error) {
         res.status(500).json({
@@ -79,6 +102,9 @@ exports.updateReview = async (req, res) => {
 
         // Handle new image uploads if any
         if (req.files && req.files.length > 0) {
+            if ((review.images.length + req.files.length) > 4) {
+                return res.status(400).json({ message: 'You can upload a maximum of 4 images in total.' });
+            }
             const newImages = await Promise.all(
                 req.files.map(file => saveFile(file))
             );
@@ -119,7 +145,7 @@ exports.deleteReview = async (req, res) => {
             await Promise.all(review.images.map(imagePath => deleteFile(imagePath)));
         }
 
-        await review.remove();
+        await review.deleteOne();
 
         res.status(200).json({
             success: true,

@@ -79,7 +79,7 @@ exports.getCart = async (req, res) => {
 // Add item to cart
 exports.addToCart = async (req, res) => {
     try {
-        const { productType, productId, quantity } = req.body;
+        const { productType, productId, quantity, withOldBattery } = req.body;
 
         // Validate product exists
         let product;
@@ -123,8 +123,9 @@ exports.addToCart = async (req, res) => {
 
         if (existingItem) {
             existingItem.quantity += quantity;
+            existingItem.withOldBattery = withOldBattery || existingItem.withOldBattery;
         } else {
-            cart.items.push({ productType, productId, quantity });
+            cart.items.push({ productType, productId, quantity, withOldBattery });
         }
 
         // Calculate total amount
@@ -227,11 +228,11 @@ async function calculateTotalAmount(items) {
         if (product) {
             let price = 0;
 
-            if (item.productType.startsWith('solar-')) {
-                // Solar products have only 'price' field
+            if (item.productType === 'battery' || item.productType === 'inverter') {
+                price = item.withOldBattery ? product.priceWithOldBattery : product.priceWithoutOldBattery;
+            } else if (item.productType.startsWith('solar-')) {
                 price = product.price || 0;
             } else {
-                // For UPS, Battery, Inverter - use sellingPrice if available, otherwise mrp
                 price = product.sellingPrice || product.mrp || 0;
             }
 

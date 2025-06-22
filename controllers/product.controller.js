@@ -8,6 +8,7 @@ const Inverter = require('../models/inverter.model');
 const Battery = require('../models/battery');
 const Brand = require('../models/brand.model');
 const Category = require('../models/category.model');
+const Review = require('../models/Review');
 
 // @desc    Get all products with pagination, search, and filtering
 // @route   GET /api/products
@@ -93,31 +94,86 @@ exports.getProducts = async (req, res) => {
 
       // Get total count and products
       total = await Model.countDocuments(query);
-      console.log("Total count:", total);
 
       products = await Model.find(query)
         .populate('brand', 'name logo')
         .populate('category', 'name')
         .sort({ createdAt: -1 })
         .skip(startIndex)
-        .limit(limit);
+        .limit(limit)
+        .lean();
 
-      console.log("Found products:", products.length);
-      console.log("First product:", products[0] ? JSON.stringify(products[0], null, 2) : "No products found");
+      if (products.length > 0) {
+        const productIds = products.map(p => p._id);
+        const reviewStats = await Review.aggregate([
+          { $match: { product: { $in: productIds } } },
+          {
+            $group: {
+              _id: '$product',
+              averageRating: { $avg: '$rating' },
+              reviewCount: { $sum: 1 }
+            }
+          }
+        ]);
+
+        const statsMap = reviewStats.reduce((map, item) => {
+          map[item._id.toString()] = item;
+          return map;
+        }, {});
+
+        products = products.map(product => {
+          const stats = statsMap[product._id.toString()];
+          return {
+            ...product,
+            averageRating: stats ? stats.averageRating : 0,
+            reviewCount: stats ? stats.reviewCount : 0,
+          };
+        });
+      }
     } else {
       // If no type specified, search in all models
-      const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
-        UPS.find(query).populate('brand', 'name logo').populate('category', 'name'),
-        SolarPCU.find(query).populate('brand', 'name logo').populate('category', 'name'),
-        SolarPV.find(query).populate('brand', 'name logo').populate('category', 'name'),
-        SolarStreetLight.find(query).populate('brand', 'name logo').populate('category', 'name'),
-        Inverter.find(query).populate('brand', 'name logo').populate('category', 'name'),
-        Battery.find(query).populate('brand', 'name logo').populate('category', 'name')
-      ]);
+      const productPromises = [
+        UPS.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
+        SolarPCU.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
+        SolarPV.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
+        SolarStreetLight.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
+        Inverter.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
+        Battery.find(query).populate('brand', 'name logo').populate('category', 'name').lean()
+      ];
 
-      products = [...ups, ...solarPCU, ...solarPV, ...solarStreetLight, ...inverter, ...battery];
-      total = products.length;
-      products = products.slice(startIndex, startIndex + limit);
+      const productArrays = await Promise.all(productPromises);
+      let allProducts = productArrays.flat();
+
+      if (allProducts.length > 0) {
+        const productIds = allProducts.map(p => p._id);
+        const reviewStats = await Review.aggregate([
+          { $match: { product: { $in: productIds } } },
+          {
+            $group: {
+              _id: '$product',
+              averageRating: { $avg: '$rating' },
+              reviewCount: { $sum: 1 }
+            }
+          }
+        ]);
+
+        const statsMap = reviewStats.reduce((map, item) => {
+          map[item._id.toString()] = item;
+          return map;
+        }, {});
+
+        allProducts = allProducts.map(product => {
+          const stats = statsMap[product._id.toString()];
+          return {
+            ...product,
+            averageRating: stats ? stats.averageRating : 0,
+            reviewCount: stats ? stats.reviewCount : 0,
+          };
+        });
+      }
+
+      total = allProducts.length;
+      products = allProducts.slice(startIndex, startIndex + limit);
     }
 
     res.status(200).json({
@@ -549,34 +605,59 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductById = async (req, res) => {
   try {
     const { id, type } = req.params;
-    let product;
+    let Model;
 
     switch (type) {
       case 'ups':
-        product = await UPS.findById(id).populate('brand category');
+        Model = UPS;
         break;
       case 'solar-pcu':
-        product = await SolarPCU.findById(id).populate('brand category');
+        Model = SolarPCU;
         break;
       case 'solar-pv':
-        product = await SolarPV.findById(id).populate('brand category');
+        Model = SolarPV;
         break;
       case 'solar-street-light':
-        product = await SolarStreetLight.findById(id).populate('brand category');
+        Model = SolarStreetLight;
         break;
       case 'inverter':
-        product = await Inverter.findById(id).populate('brand category');
+        Model = Inverter;
         break;
       case 'battery':
-        product = await Battery.findById(id).populate('brand category');
+        Model = Battery;
         break;
       default:
         return res.status(400).json({ message: 'Invalid product type' });
     }
 
+    let product = await Model.findById(id).populate('brand category').lean();
+
     if (!product) {
       return res.status(404).json({ message: 'Product not found' });
     }
+
+    // Calculate review statistics
+    const reviewStats = await Review.aggregate([
+      { $match: { product: new mongoose.Types.ObjectId(id) } },
+      {
+        $group: {
+          _id: '$product',
+          averageRating: { $avg: '$rating' },
+          reviewCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const stats = reviewStats[0] || { averageRating: 0, reviewCount: 0 };
+    product.averageRating = stats.averageRating;
+    product.reviewCount = stats.reviewCount;
+
+    // Fetch the actual reviews for the product
+    const reviews = await Review.find({ product: new mongoose.Types.ObjectId(id) })
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 });
+
+    product.reviews = reviews;
 
     res.json(product);
   } catch (error) {
