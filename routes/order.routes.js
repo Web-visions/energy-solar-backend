@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/order.controller');
 const authMiddleware = require('../middlewares/auth.middleware');
+const { isStaffOrAdmin } = require('../middlewares/admin.middleware');
 
 // Create new order
 router.post('/', authMiddleware, orderController.createOrder);
@@ -10,7 +11,7 @@ router.post('/', authMiddleware, orderController.createOrder);
 router.get('/user', authMiddleware, orderController.getUserOrders);
 
 // Get all orders (admin)
-router.get('/', authMiddleware, orderController.getAllOrders);
+router.get('/', authMiddleware, isStaffOrAdmin, orderController.getAllOrders);
 
 // Get order details by ID (for both admin and user)
 router.get('/details/:orderId', authMiddleware, orderController.getOrderDetails);
@@ -19,6 +20,6 @@ router.get('/details/:orderId', authMiddleware, orderController.getOrderDetails)
 router.get('/:orderId', authMiddleware, orderController.getOrderById);
 
 // Update order status (admin)
-router.put('/:orderId/status', authMiddleware, orderController.updateOrderStatus);
+router.put('/:orderId/status', authMiddleware, isStaffOrAdmin, orderController.updateOrderStatus);
 
 module.exports = router; 

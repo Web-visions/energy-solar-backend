@@ -6,6 +6,7 @@ const SolarPV = require('../models/solor-pv.model.js');
 const SolarStreetLight = require('../models/solor-street-light.model.js');
 const Inverter = require('../models/inverter.model.js')
 const Battery = require('../models/battery.js');
+const City = require('../models/city.model');
 
 // Helper function to populate product details
 async function populateProductDetails(productType, productId) {
@@ -93,6 +94,15 @@ exports.createOrder = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Cart is empty' });
         }
 
+        // Fetch delivery charge from city
+        let deliveryCharge = 0;
+        if (shippingInfo && shippingInfo.cityId) {
+            const cityDoc = await City.findById(shippingInfo.cityId);
+            if (cityDoc) {
+                deliveryCharge = cityDoc.deliveryCharge || 0;
+            }
+        }
+
         const orderItems = [];
         for (const item of cart.items) {
             const product = await populateProductDetails(item.productType, item.productId);
@@ -110,10 +120,13 @@ exports.createOrder = async (req, res) => {
             });
         }
 
+        const totalAmount = cart.totalAmount + deliveryCharge;
+
         const newOrder = new Order({
             user: userId,
             items: orderItems,
-            totalAmount: cart.totalAmount,
+            totalAmount: totalAmount,
+            deliveryCharge: deliveryCharge,
             shippingInfo: shippingInfo,
             paymentInfo: {
                 method: 'cod'
@@ -133,7 +146,8 @@ exports.createOrder = async (req, res) => {
             data: {
                 orderId: newOrder._id,
                 orderNumber: newOrder.orderNumber,
-                total: newOrder.totalAmount
+                total: newOrder.totalAmount,
+                deliveryCharge: newOrder.deliveryCharge
             }
         });
 
@@ -186,8 +200,14 @@ exports.getOrderById = async (req, res) => {
     try {
         const { orderId } = req.params;
         const userId = req.user.id;
+        const userRole = req.user.role;
 
-        const order = await Order.findOne({ _id: orderId, user: userId });
+        let query = { _id: orderId };
+        if (userRole === 'user') {
+            query.user = userId;
+        }
+
+        const order = await Order.findOne(query);
 
         if (!order) {
             return res.status(404).json({

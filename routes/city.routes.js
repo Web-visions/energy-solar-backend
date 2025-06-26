@@ -12,16 +12,17 @@ const {
   getActiveCities,
   getAllCities
 } = require('../controllers/city.controller');
+const { isAdmin } = require('../middlewares/admin.middleware');
 
 // Public routes
 router.get('/active', getActiveCities);
-router.get('/', getCities);
+router.get('/', authMiddleware, isAdmin, getCities);
 router.get('/:id', getCity);
 
 // Protected routes (admin only)
-router.post('/', authMiddleware, createCity);
-router.put('/:id', authMiddleware, updateCity);
-router.put('/:id/status', authMiddleware, toggleCityStatus);
-router.delete('/:id', authMiddleware, deleteCity);
+router.post('/', authMiddleware, isAdmin, createCity);
+router.put('/:id', authMiddleware, isAdmin, updateCity);
+router.put('/:id/status', authMiddleware, isAdmin, toggleCityStatus);
+router.delete('/:id', authMiddleware, isAdmin, deleteCity);
 
 module.exports = router;

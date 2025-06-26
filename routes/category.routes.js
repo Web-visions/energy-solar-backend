@@ -9,15 +9,16 @@ const {
   // toggleCategoryStatus,
   deleteCategory
 } = require('../controllers/category.controller');
+const { isAdmin } = require('../middlewares/admin.middleware');
 
 // Public routes
 router.get('/', getCategories);
 router.get('/:id', getCategory);
 
 // Protected routes (admin only)
-router.post('/', authMiddleware, createCategory);
-router.put('/:id', authMiddleware,  updateCategory);
+router.post('/', authMiddleware, isAdmin, createCategory);
+router.put('/:id', authMiddleware, isAdmin, updateCategory);
 // router.put('/:id/status', authMiddleware , toggleCategoryStatus);
-router.delete('/:id', authMiddleware, deleteCategory);
+router.delete('/:id', authMiddleware, isAdmin, deleteCategory);
 
 module.exports = router;
