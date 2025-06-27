@@ -129,8 +129,7 @@ exports.createInverter = async (req, res) => {
       capacity,
       warranty,
       mrp,
-      priceWithoutOldBattery,
-      priceWithOldBattery
+      sellingPrice
     } = req.body;
 
     // Validate required fields
@@ -189,8 +188,7 @@ exports.createInverter = async (req, res) => {
       capacity: capacity ? Number(capacity) : undefined,
       warranty,
       mrp: mrp ? Number(mrp) : undefined,
-      priceWithoutOldBattery: priceWithoutOldBattery ? Number(priceWithoutOldBattery) : undefined,
-      priceWithOldBattery: priceWithOldBattery ? Number(priceWithOldBattery) : undefined,
+      sellingPrice: sellingPrice ? Number(sellingPrice) : undefined,
       image: imagePath
     });
 
@@ -260,9 +258,7 @@ exports.updateInverter = async (req, res) => {
     // Convert numeric fields
     if (req.body.capacity) req.body.capacity = Number(req.body.capacity);
     if (req.body.mrp) req.body.mrp = Number(req.body.mrp);
-    if (req.body.priceWithoutOldBattery) req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
-    if (req.body.priceWithOldBattery) req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
-
+    if (req.body.sellingPrice) req.body.sellingPrice = Number(req.body.sellingPrice)
     // Update Inverter
     inverter = await Inverter.findByIdAndUpdate(
       req.params.id,

@@ -12,8 +12,7 @@ const inverterSchema = new mongoose.Schema({
   capacity: Number,
   warranty: String,
   mrp: Number,
-  priceWithoutOldBattery: Number,
-  priceWithOldBattery: Number,
+  sellingPrice: Number,
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 

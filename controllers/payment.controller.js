@@ -100,16 +100,23 @@ const verifyPayment = async (req, res) => {
                     productType: item.productType,
                     quantity: item.quantity,
                     price: price,
+                    ...(item.productType === 'battery' && { withOldBattery: item.withOldBattery })
                 });
             }
 
-            const city = await City.findOne({ name: shippingInfo.city });
-            const totalAmount = cart.totalAmount + (city?.deliveryCharge || 0);
+            let city = null;
+            let deliveryCharge = 0;
+            if (shippingInfo && shippingInfo.cityId) {
+                city = await City.findById(shippingInfo.cityId);
+                if (city) deliveryCharge = city.deliveryCharge || 0;
+            }
+            const totalAmount = cart.totalAmount + deliveryCharge;
 
             const newOrder = new Order({
                 user: req.user.id,
                 items: orderItems,
                 totalAmount: totalAmount,
+                deliveryCharge: deliveryCharge,
                 shippingInfo: shippingInfo,
                 paymentInfo: {
                     razorpay_order_id,

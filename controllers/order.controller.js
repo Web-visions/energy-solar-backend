@@ -116,7 +116,8 @@ exports.createOrder = async (req, res) => {
                 product: item.productId,
                 productType: item.productType,
                 quantity: item.quantity,
-                price: price
+                price: price,
+                ...(item.productType === 'battery' && { withOldBattery: item.withOldBattery })
             });
         }
 

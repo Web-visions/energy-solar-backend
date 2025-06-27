@@ -10,13 +10,23 @@ const SolarStreetLight = require('../models/solor-street-light.model.js');
 // --- Data Access Helpers ---
 const getStatus = (ord) => ord.orderStatus ?? ord.status;
 const getTotal = (ord) => ord.totalAmount ?? ord.pricing?.total;
-const getSubtotal = (ord) => ord.pricing?.subtotal ?? ord.items.reduce((sum, item) => sum + (item.price * (item.quantity ?? 1)), 0);
-const getDeliveryCharge = (ord) => ord.pricing?.deliveryCharge ?? 0;
+const getDeliveryCharge = (ord) => ord.deliveryCharge ?? ord.pricing?.deliveryCharge ?? 0;
 const getTax = (ord) => ord.pricing?.tax ?? 0;
 const getShippingInfo = (ord) => ord.shippingInfo ?? ord.shippingDetails;
 const getPaymentInfo = (ord) => ord.paymentInfo ?? ord.paymentDetails;
 const getItemProduct = (item) => item.product ?? item.productId;
-const getItemTotalPrice = (item) => item.totalPrice ?? (item.price * (item.quantity ?? 1));
+const getItemTotalPrice = (item) => {
+    // Battery price logic
+    const product = getItemProduct(item);
+    if (item.productType === 'battery') {
+        const price = item.withOldBattery ? product?.priceWithOldBattery : product?.priceWithoutOldBattery;
+        return (price || 0) * (item.quantity ?? 1);
+    }
+    return (item.price || 0) * (item.quantity ?? 1);
+};
+const getSubtotal = (ord) => {
+    return (ord.items || []).reduce((sum, item) => sum + getItemTotalPrice(item), 0);
+};
 
 // Get order by ID with populated product details
 const getOrderWithProducts = async (orderId) => {
@@ -43,31 +53,34 @@ const getOrderWithProducts = async (orderId) => {
     const populatedItems = await Promise.all(
         order.items.map(async (item) => {
             let product;
+            // The product ID is in item.product, not item.productId for orders
+            const productId = item.product || item.productId;
+
             switch (item.productType) {
                 case 'battery':
-                    product = await Battery.findById(item.productId).populate('brand');
+                    product = await Battery.findById(productId).populate('brand');
                     break;
                 case 'ups':
-                    product = await UPS.findById(item.productId).populate('brand');
+                    product = await UPS.findById(productId).populate('brand');
                     break;
                 case 'inverter':
-                    product = await Inverter.findById(item.productId).populate('brand');
+                    product = await Inverter.findById(productId).populate('brand');
                     break;
                 case 'solar-pv':
-                    product = await SolarPV.findById(item.productId).populate('brand');
+                    product = await SolarPV.findById(productId).populate('brand');
                     break;
                 case 'solar-pcu':
-                    product = await SolarPCU.findById(item.productId).populate('brand');
+                    product = await SolarPCU.findById(productId).populate('brand');
                     break;
                 case 'solar-street-light':
-                    product = await SolarStreetLight.findById(item.productId).populate('brand');
+                    product = await SolarStreetLight.findById(productId).populate('brand');
                     break;
                 default:
                     product = null;
             }
             return {
                 ...item.toObject(),
-                productId: product
+                product: product
             };
         })
     );
@@ -82,6 +95,8 @@ const getOrderWithProducts = async (orderId) => {
 const generateInvoiceHTML = (order) => {
     const shipping = getShippingInfo(order);
     const payment = getPaymentInfo(order);
+    const user = order.user || {};
+    const customerName = shipping?.fullName || user.name || user.email || 'N/A';
 
     const formatDate = (date) => new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     const formatCurrency = (amount) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -288,17 +303,17 @@ const generateInvoiceHTML = (order) => {
         <!-- Invoice Header -->
         <div class="invoice-header">
             <div class="invoice-info">
-                <div class="invoice-number">Invoice #${order.orderNumber}</div>
-                <div class="invoice-date">Date: ${formatDate(order.createdAt)}</div>
+                <div class="invoice-number">Invoice #${order.orderNumber || 'N/A'}</div>
+                <div class="invoice-date">Date: ${order.createdAt ? formatDate(order.createdAt) : 'N/A'}</div>
                 <div style="margin-top: 10px;">
-                    <span class="status-badge status-${getStatus(order)}">${getStatus(order)}</span>
+                    <span class="status-badge status-${getStatus(order)}">${getStatus(order) || 'N/A'}</span>
                 </div>
             </div>
             <div style="text-align: right;">
                 <div style="font-weight: bold; margin-bottom: 5px;">Order Details</div>
-                <div>Order Date: ${formatDate(order.createdAt)}</div>
-                <div>Payment: ${payment.method.toUpperCase()}</div>
-                ${payment.transactionId ? `<div>Transaction ID: ${payment.transactionId}</div>` : ''}
+                <div>Order Date: ${order.createdAt ? formatDate(order.createdAt) : 'N/A'}</div>
+                <div>Payment: ${(payment?.method || 'N/A').toUpperCase()}</div>
+                ${payment?.transactionId ? `<div>Transaction ID: ${payment.transactionId}</div>` : ''}
             </div>
         </div>
         
@@ -307,20 +322,20 @@ const generateInvoiceHTML = (order) => {
             <div class="bill-to">
                 <div class="section-title">Bill To:</div>
                 <div class="address-details">
-                    <div style="font-weight: bold;">${shipping.fullName}</div>
-                    <div>${shipping.address}</div>
-                    <div>${shipping.city}, ${shipping.state}</div>
-                    <div>${shipping.phone}</div>
-                    <div>${shipping.email}</div>
+                    <div style="font-weight: bold;">${customerName}</div>
+                    <div>${shipping?.address || 'N/A'}</div>
+                    <div>${shipping?.city || 'N/A'}, ${shipping?.state || ''}</div>
+                    <div>${shipping?.phone || 'N/A'}</div>
+                    <div>${shipping?.email || 'N/A'}</div>
                 </div>
             </div>
             <div class="ship-to">
                 <div class="section-title">Ship To:</div>
                 <div class="address-details">
-                    <div style="font-weight: bold;">${shipping.fullName}</div>
-                    <div>${shipping.address}</div>
-                    <div>${shipping.city}, ${shipping.state}</div>
-                    ${shipping.landmark ? `<div>Landmark: ${shipping.landmark}</div>` : ''}
+                    <div style="font-weight: bold;">${customerName}</div>
+                    <div>${shipping?.address || 'N/A'}</div>
+                    <div>${shipping?.city || 'N/A'}, ${shipping?.state || ''}</div>
+                    ${shipping?.landmark ? `<div>Landmark: ${shipping.landmark}</div>` : ''}
                 </div>
             </div>
         </div>
@@ -338,32 +353,38 @@ const generateInvoiceHTML = (order) => {
                 </thead>
                 <tbody>
                     ${order.items.map(item => {
-        // Check if product has MRP for cut price display
-        const hasMRP = getItemProduct(item).mrp && getItemProduct(item).mrp > item.price;
-        const discount = hasMRP ? getItemProduct(item).mrp - item.price : 0;
-
+        console.log(item, "ITEM")
+        const product = getItemProduct(item);
+        console.log(product, "product")
+        let unitPrice = item.price || 0;
+        let mrp = product?.mrp;
+        if (item.productType === 'battery') {
+            unitPrice = item.withOldBattery ? product?.priceWithOldBattery : product?.priceWithoutOldBattery;
+        }
+        const hasMRP = mrp && mrp > unitPrice;
+        const discount = hasMRP ? mrp - unitPrice : 0;
         return `
                         <tr>
                             <td>
-                                <div class="product-name">${getItemProduct(item).name}</div>
+                                <div class="product-name">${product?.name || 'N/A'}</div>
                                 <div class="product-details">
-                                    Brand: ${getItemProduct(item).brand?.name || 'N/A'}
-                                    ${getItemProduct(item).modelName ? `<br>Model: ${getItemProduct(item).modelName}` : ''}
-                                    ${getItemProduct(item).capacity ? `<br>Capacity: ${getItemProduct(item).capacity}VA` : ''}
-                                    ${getItemProduct(item).AH ? `<br>Capacity: ${getItemProduct(item).AH}Ah` : ''}
-                                    ${getItemProduct(item).wattage ? `<br>Wattage: ${getItemProduct(item).wattage}W` : ''}
-                                    ${getItemProduct(item).power ? `<br>Power: ${getItemProduct(item).power}W` : ''}
-                                    ${getItemProduct(item).batteryType ? `<br>Type: ${getItemProduct(item).batteryType}` : ''}
-                                    ${getItemProduct(item).warranty ? `<br>Warranty: ${getItemProduct(item).warranty}` : ''}
+                                    Brand: ${product?.brand?.name || 'N/A'}
+                                    ${product?.modelName ? `<br>Model: ${product.modelName}` : ''}
+                                    ${product?.capacity ? `<br>Capacity: ${product.capacity}VA` : ''}
+                                    ${product?.AH ? `<br>Capacity: ${product.AH}Ah` : ''}
+                                    ${product?.wattage ? `<br>Wattage: ${product.wattage}W` : ''}
+                                    ${product?.power ? `<br>Power: ${product.power}W` : ''}
+                                    ${product?.batteryType ? `<br>Type: ${product.batteryType}` : ''}
+                                    ${product?.warranty ? `<br>Warranty: ${product.warranty}` : ''}
                                     ${hasMRP ? `<br><span style="color: #dc2626; font-weight: bold;">Save ₹${formatCurrency(discount)}</span>` : ''}
                                 </div>
                             </td>
                             <td class="quantity">${item.quantity}</td>
                             <td class="price">
-                                ${hasMRP ? `<div style="text-decoration: line-through; color: #6b7280; font-size: 12px;">${formatCurrency(getItemProduct(item).mrp)}</div>` : ''}
-                                <div>${formatCurrency(item.price)}</div>
+                                ${hasMRP ? `<div style="text-decoration: line-through; color: #6b7280; font-size: 12px;">${formatCurrency(mrp)}</div>` : ''}
+                                <div>${formatCurrency(unitPrice)}</div>
                             </td>
-                            <td class="price">${formatCurrency(getItemTotalPrice(item))}</td>
+                            <td class="price">${formatCurrency((unitPrice || 0) * (item.quantity || 1))}</td>
                         </tr>
                         `;
     }).join('')}
@@ -381,10 +402,7 @@ const generateInvoiceHTML = (order) => {
                 <span>Delivery Charges:</span>
                 <span>${formatCurrency(getDeliveryCharge(order))}</span>
             </div>
-            <div class="total-row">
-                <span>Tax:</span>
-                <span>${formatCurrency(getTax(order))}</span>
-            </div>
+           
             <div class="total-row final">
                 <span>Total Amount:</span>
                 <span>${formatCurrency(getTotal(order))}</span>
