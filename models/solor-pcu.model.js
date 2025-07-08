@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 
 const solarPCUSchema = new mongoose.Schema({
+  prodType: { type: String, default: "solar-pcu" },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
   name: { type: String, required: true },
@@ -16,6 +17,8 @@ const solarPCUSchema = new mongoose.Schema({
   dimension: String,
   weight: Number,
   price: { type: Number, required: true },
+  isFeatured : {type:Boolean,default:false},
+
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 

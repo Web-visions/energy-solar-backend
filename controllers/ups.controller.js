@@ -129,7 +129,8 @@ exports.createUPS = async (req, res) => {
       dimension,
       warranty,
       mrp,
-      sellingPrice
+      sellingPrice,
+      isFeatured
     } = req.body;
 
     // Validate required fields
@@ -183,7 +184,8 @@ exports.createUPS = async (req, res) => {
       warranty,
       mrp: mrp ? Number(mrp) : undefined,
       sellingPrice: sellingPrice ? Number(sellingPrice) : undefined,
-      image: imagePath
+      image: imagePath,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({

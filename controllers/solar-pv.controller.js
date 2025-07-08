@@ -142,7 +142,8 @@ exports.createSolarPVModule = async (req, res) => {
       importer,
       replacementPolicy,
       staticTags,
-      price
+      price,
+      isFeatured
     } = req.body;
 
     // Validate required fields
@@ -202,7 +203,8 @@ exports.createSolarPVModule = async (req, res) => {
       replacementPolicy,
       staticTags: staticTags ? JSON.parse(staticTags) : [],
       price: Number(price),
-      images: imagePaths.length > 0 ? imagePaths : undefined
+      images: imagePaths.length > 0 ? imagePaths : undefined,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({

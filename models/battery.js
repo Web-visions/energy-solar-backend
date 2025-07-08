@@ -2,20 +2,22 @@
 const mongoose = require('mongoose');
 
 const batterySchema = new mongoose.Schema({
+  prodType: { type: String, default: "battery" },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
-  brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },  
+  brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
   name: { type: String, required: true },
   description: String,
   features: [String],
-  image : String,
+  image: String,
   nominalFilledWeight: String,
   batteryType: { type: String, enum: ['li ion', 'lead acid', 'smf'] },
   AH: Number,
   dimension: String,
-  warranty: String, 
+  warranty: String,
   mrp: Number,
   priceWithoutOldBattery: Number,
   priceWithOldBattery: Number,
+  isFeatured: { type: Boolean, default: false },
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 

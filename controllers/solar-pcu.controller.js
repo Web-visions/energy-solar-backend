@@ -144,7 +144,8 @@ exports.createSolarPCU = async (req, res) => {
       warranty,
       dimension,
       weight,
-      price
+      price,
+      isFeatured
     } = req.body;
 
     // Validate required fields
@@ -199,7 +200,8 @@ exports.createSolarPCU = async (req, res) => {
       dimension,
       weight: weight ? Number(weight) : undefined,
       price: Number(price),
-      image: imagePath
+      image: imagePath,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({

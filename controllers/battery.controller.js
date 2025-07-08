@@ -125,7 +125,8 @@ exports.createBattery = async (req, res) => {
       warranty,
       mrp,
       priceWithoutOldBattery,
-      priceWithOldBattery
+      priceWithOldBattery,
+      isFeatured
     } = req.body;
 
     if (!brand || !category || !name) {
@@ -160,7 +161,8 @@ exports.createBattery = async (req, res) => {
       mrp: mrp ? Number(mrp) : undefined,
       priceWithoutOldBattery: priceWithoutOldBattery ? Number(priceWithoutOldBattery) : undefined,
       priceWithOldBattery: priceWithOldBattery ? Number(priceWithOldBattery) : undefined,
-      image: imagePath
+      image: imagePath,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({ success: true, data: battery });

@@ -128,7 +128,8 @@ exports.createSolarStreetLight = async (req, res) => {
       power,
       replacementPolicy,
       staticTags,
-      price
+      price,
+      isFeatured
     } = req.body;
 
     // Validate required fields
@@ -179,7 +180,8 @@ exports.createSolarStreetLight = async (req, res) => {
       replacementPolicy,
       staticTags: staticTags ? JSON.parse(staticTags) : [],
       price: Number(price),
-      image: imagePath
+      image: imagePath,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({

@@ -9,7 +9,12 @@ exports.getAllInverters = async (req, res) => {
   try {
     // Pagination
     const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 10;
+    let limit = 10;
+    if (req.query.isFeatured === 'true') {
+      limit = Number(req.query.limit) || 6;
+    } else if (req.query.limit) {
+      limit = Number(req.query.limit);
+    }
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
 
@@ -129,7 +134,8 @@ exports.createInverter = async (req, res) => {
       capacity,
       warranty,
       mrp,
-      sellingPrice
+      sellingPrice,
+      isFeatured
     } = req.body;
 
     // Validate required fields
@@ -189,7 +195,8 @@ exports.createInverter = async (req, res) => {
       warranty,
       mrp: mrp ? Number(mrp) : undefined,
       sellingPrice: sellingPrice ? Number(sellingPrice) : undefined,
-      image: imagePath
+      image: imagePath,
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
     });
 
     res.status(201).json({

@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 
 const inverterSchema = new mongoose.Schema({
+  prodType: { type: String, default: "inverter" },
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
   name: { type: String, required: true },
@@ -13,6 +14,8 @@ const inverterSchema = new mongoose.Schema({
   warranty: String,
   mrp: Number,
   sellingPrice: Number,
+  isFeatured : {type:Boolean,default:false},
+
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 

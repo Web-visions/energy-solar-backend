@@ -39,7 +39,7 @@ exports.getProducts = async (req, res) => {
 
     console.log(productType, "PT")
 
-    if (productType) {
+    if (productType && productType !== "") {
       // If type is specified, use specific model
       let Model;
       switch (productType) {
@@ -68,29 +68,26 @@ exports.getProducts = async (req, res) => {
           });
       }
 
-      console.log("Selected Model:", Model.modelName);
-      console.log("Query:", query);
-
       // Apply filters
+      const andFilters = [];
       if (req.query.brand) {
-        // Handle both ObjectId and String brand fields
-        query.$or = [
-          { brand: req.query.brand },
-          { 'brand.name': req.query.brand }
-        ];
+        andFilters.push({ brand: req.query.brand });
       }
-      if (req.query.category) query.category = req.query.category;
-
-      // Only apply price filters for models that have price fields
+      if (req.query.category) {
+        andFilters.push({ category: req.query.category });
+      }
       if ((req.query.minPrice || req.query.maxPrice) &&
         (productType === 'ups' || productType === 'inverter' || productType === 'battery')) {
-        query.$or = [
-          { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
-          { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
-        ];
+        andFilters.push({
+          $or: [
+            { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
+            { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
+          ]
+        });
       }
-
-      console.log("Final Query:", JSON.stringify(query, null, 2));
+      if (andFilters.length > 0) {
+        query.$and = andFilters;
+      }
 
       // Get total count and products
       total = await Model.countDocuments(query);
@@ -132,6 +129,25 @@ exports.getProducts = async (req, res) => {
       }
     } else {
       // If no type specified, search in all models
+      const andFilters = [];
+      if (req.query.brand) {
+        andFilters.push({ brand: req.query.brand });
+      }
+      if (req.query.category) {
+        andFilters.push({ category: req.query.category });
+      }
+      if ((req.query.minPrice || req.query.maxPrice)) {
+        andFilters.push({
+          $or: [
+            { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
+            { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
+          ]
+        });
+      }
+      if (andFilters.length > 0) {
+        query.$and = andFilters;
+      }
+
       const productPromises = [
         UPS.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
         SolarPCU.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
@@ -464,17 +480,27 @@ exports.deleteProduct = async (req, res) => {
 // @access  Public
 exports.getFeaturedProducts = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 8;
+    const limit = parseInt(req.query.limit, 10) || 20;
 
-    const products = await Product.find({ isFeatured: true, isActive: true })
-      .populate('brand', 'name logo')
-      .populate('category', 'name')
-      .limit(limit);
+    // Fetch featured products from all models
+    const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
+      UPS.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+      SolarPCU.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+      SolarPV.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+      SolarStreetLight.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+      Inverter.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+      Battery.find({ isFeatured: true }).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).limit(limit),
+    ]);
+
+    // Merge and sort all products by createdAt desc, then take top 20
+    const allProducts = [...ups, ...solarPCU, ...solarPV, ...solarStreetLight, ...inverter, ...battery]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, limit);
 
     res.status(200).json({
       success: true,
-      count: products.length,
-      data: products
+      count: allProducts.length,
+      data: allProducts
     });
   } catch (error) {
     console.error(error);
