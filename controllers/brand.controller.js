@@ -25,14 +25,14 @@ exports.getBrands = async (req, res) => {
     const brands = await Brand.find(searchQuery)
       .sort({ createdAt: -1 })
       .skip(startIndex)
-      .limit(limit);
+      .limit(100);
 
     // Pagination result
     const pagination = {};
     pagination.total = total;
     pagination.pages = Math.ceil(total / limit);
     pagination.page = page;
-    pagination.limit = limit;
+    pagination.limit = 100;
 
     if (page < pagination.pages) {
       pagination.next = page + 1;
@@ -144,7 +144,7 @@ exports.createBrand = async (req, res) => {
 exports.updateBrand = async (req, res) => {
   try {
     const { name, description } = req.body;
-    
+
     let brand = await Brand.findById(req.params.id);
 
     if (!brand) {
@@ -204,7 +204,7 @@ exports.updateBrand = async (req, res) => {
 exports.toggleBrandStatus = async (req, res) => {
   try {
     const { isActive } = req.body;
-    
+
     let brand = await Brand.findById(req.params.id);
 
     if (!brand) {

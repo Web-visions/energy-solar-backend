@@ -480,7 +480,7 @@ exports.deleteProduct = async (req, res) => {
 // @access  Public
 exports.getFeaturedProducts = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit, 10) || 20;
+    const limit = parseInt(req.query.limit, 12) || 12;
 
     // Fetch featured products from all models
     const [ups, solarPCU, solarPV, solarStreetLight, inverter, battery] = await Promise.all([
