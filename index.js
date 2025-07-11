@@ -26,6 +26,8 @@ const leadRoutes = require('./routes/lead.routes')
 const invoiceRoutes = require('./routes/invoice.routes')
 const orderRoutes = require('./routes/order.routes')
 const paymentRoutes = require('./routes/payment.routes')
+const bulkLeadRoutes = require('./routes/bulkLead.routes');
+const adminStatsRoutes = require('./routes/adminStats.routes');
 
 // Initialize express app
 const app = express();
@@ -74,6 +76,8 @@ app.use('/api/leads', leadRoutes)
 app.use('/api/invoices', invoiceRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/payment', paymentRoutes)
+app.use('/api/bulk-orders', bulkLeadRoutes);
+app.use('/api/admin-stats', adminStatsRoutes);
 // app.use('/api/admin', adminRoutes);
 
 // Root route
