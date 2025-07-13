@@ -303,6 +303,10 @@ exports.deleteSolarPCU = async (req, res) => {
       });
     }
 
+    // Remove from all user carts before deleting
+    const { removeProductFromAllCarts } = require('./cart.controller');
+    await removeProductFromAllCarts('solar-pcu', req.params.id);
+
     // Delete image if exists
     if (solarPCU.image) {
       await fileUpload.deleteFile(solarPCU.image);

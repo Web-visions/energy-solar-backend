@@ -278,6 +278,10 @@ exports.deleteSolarStreetLight = async (req, res) => {
       });
     }
 
+    // Remove from all user carts before deleting
+    const { removeProductFromAllCarts } = require('./cart.controller');
+    await removeProductFromAllCarts('solar-street-light', req.params.id);
+
     // Delete image if exists
     if (solarStreetLight.image) {
       await fileUpload.deleteFile(solarStreetLight.image);

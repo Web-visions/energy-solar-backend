@@ -6,6 +6,32 @@ const SolarStreetLight = require('../models/solor-street-light.model');
 const Inverter = require('../models/inverter.model');
 const Battery = require('../models/battery');
 
+// Utility function to remove items from all user carts when a product is deleted
+exports.removeProductFromAllCarts = async (productType, productId) => {
+  try {
+    // Find all carts that contain this product
+    const cartsToUpdate = await Cart.find({
+      'items.productType': productType,
+      'items.productId': productId
+    });
+
+    // Update each cart by removing the specific item
+    for (const cart of cartsToUpdate) {
+      cart.items = cart.items.filter(
+        item => !(item.productType === productType && item.productId.toString() === productId.toString())
+      );
+      
+      // Recalculate total amount
+      cart.totalAmount = await calculateTotalAmount(cart.items);
+      await cart.save();
+    }
+
+    console.log(`Removed ${productType} with ID ${productId} from ${cartsToUpdate.length} carts`);
+  } catch (error) {
+    console.error('Error removing product from carts:', error);
+  }
+};
+
 // Helper function to populate cart with detailed product information
 async function populateCartDetails(cart) {
     // Manually populate product details for each item

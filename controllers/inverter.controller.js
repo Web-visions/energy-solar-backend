@@ -303,6 +303,10 @@ exports.deleteInverter = async (req, res) => {
       });
     }
 
+    // Remove from all user carts before deleting
+    const { removeProductFromAllCarts } = require('./cart.controller');
+    await removeProductFromAllCarts('inverter', req.params.id);
+
     // Delete image if exists
     if (inverter.image) {
       await fileUpload.deleteFile(inverter.image);

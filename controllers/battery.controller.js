@@ -255,6 +255,9 @@ exports.deleteBattery = async (req, res) => {
     if (!battery) {
       return res.status(404).json({ success: false, message: 'Battery not found' });
     }
+    // Remove from all user carts before deleting
+    const { removeProductFromAllCarts } = require('./cart.controller');
+    await removeProductFromAllCarts('battery', req.params.id);
     // Delete image if exists
     if (battery.image) {
       await fileUpload.deleteFile(battery.image);

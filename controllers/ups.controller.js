@@ -1,5 +1,6 @@
 const UPS = require('../models/ups.model');
 const fileUpload = require('../utils/fileUpload');
+const { removeProductFromAllCarts } = require('./cart.controller');
 
 // @desc    Get all UPS with pagination, search, filtering (with brand support)
 // @route   GET /api/ups
@@ -289,6 +290,9 @@ exports.deleteUPS = async (req, res) => {
         message: 'UPS not found'
       });
     }
+
+    // Remove from all user carts before deleting
+    await removeProductFromAllCarts('ups', req.params.id);
 
     // Delete image if exists
     if (ups.image) {

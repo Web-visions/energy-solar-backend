@@ -8,6 +8,7 @@ router.get('/', productController.getProducts);
 router.get('/featured', productController.getFeaturedProducts);
 router.get('/all', productController.getAllProducts);
 router.get('/filters', productController.getFilterOptions);
+router.get('/test-brand-filter', productController.testBrandFilter);
 
 // Get single product by ID and type
 router.get('/:type/:id', productController.getProductById);

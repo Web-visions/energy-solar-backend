@@ -313,6 +313,10 @@ exports.deleteSolarPVModule = async (req, res) => {
       });
     }
 
+    // Remove from all user carts before deleting
+    const { removeProductFromAllCarts } = require('./cart.controller');
+    await removeProductFromAllCarts('solar-pv', req.params.id);
+
     // Delete images if they exist
     if (solarPVModule.images && solarPVModule.images.length > 0) {
       for (const image of solarPVModule.images) {
