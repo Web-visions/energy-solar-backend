@@ -415,7 +415,6 @@ const generateInvoiceHTML = (order) => {
                 <div style="font-weight: bold; margin-bottom: 10px;">Thank you for your business!</div>
                 <div>Energy storage system </div>
                 <div>24/7 Support: +91-8929490346 | Email: connect@energystoragesystem.in</div>
-                <div>Free Installation Across India</div>
                 <div style="margin-top: 15px; font-size: 10px; color: #999;">
                     This is a computer generated invoice. No signature required.
                 </div>

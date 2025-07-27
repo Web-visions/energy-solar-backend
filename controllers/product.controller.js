@@ -15,14 +15,18 @@ const Review = require('../models/Review');
 // @access  Public
 exports.getProducts = async (req, res) => {
   try {
-    // Pagination
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
+    const productType = req.query.type;
+    const capacity = req.query.capacity ? Number(req.query.capacity) : null;
 
-    // Search
     let query = {};
+    let products = [];
+    let total = 0;
+
+    // Text search
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -30,88 +34,89 @@ exports.getProducts = async (req, res) => {
       ];
     }
 
-    const productType = req.query.type;
-    let products = [];
-    let total = 0;
+    const buildFilters = () => {
+      const andFilters = [];
 
-    if (productType && productType !== "") {
+      if (req.query.brand && mongoose.Types.ObjectId.isValid(req.query.brand)) {
+        andFilters.push({ brand: new mongoose.Types.ObjectId(req.query.brand) });
+      }
+
+      if (req.query.category && mongoose.Types.ObjectId.isValid(req.query.category)) {
+        andFilters.push({ category: new mongoose.Types.ObjectId(req.query.category) });
+      }
+
+      if (req.query.minPrice || req.query.maxPrice) {
+        const min = Number(req.query.minPrice || 0);
+        const max = Number(req.query.maxPrice || Infinity);
+        andFilters.push({
+          $or: [
+            { price: { $gte: min, $lte: max } },
+            { mrp: { $gte: min, $lte: max } },
+            { sellingPrice: { $gte: min, $lte: max } }
+          ]
+        });
+      }
+
+      // Capacity filter
+      if (capacity && productType === 'battery') {
+        andFilters.push({ AH: capacity });
+      } else if (capacity && productType === 'inverter') {
+        andFilters.push({capacity });
+      }
+
+      return andFilters;
+    };
+
+    const appendReviewStats = async (products) => {
+      const productIds = products.map(p => p._id);
+      const stats = await Review.aggregate([
+        { $match: { product: { $in: productIds } } },
+        {
+          $group: {
+            _id: '$product',
+            averageRating: { $avg: '$rating' },
+            reviewCount: { $sum: 1 }
+          }
+        }
+      ]);
+      const statsMap = Object.fromEntries(stats.map(stat => [stat._id.toString(), stat]));
+      return products.map(p => ({
+        ...p,
+        averageRating: statsMap[p._id.toString()]?.averageRating || 0,
+        reviewCount: statsMap[p._id.toString()]?.reviewCount || 0
+      }));
+    };
+
+    // === TYPE SPECIFIED ===
+    if (productType) {
+      const filters = buildFilters();
+
+      // --- MULTIPLE SOLAR MODELS ---
       if (productType.startsWith('solar')) {
-        const andFilters = [];
+        const solarQuery = filters.length ? { $and: filters } : {};
 
-        if (req.query.brand) {
-          if (!mongoose.Types.ObjectId.isValid(req.query.brand)) {
-            return res.status(400).json({ success: false, message: 'Invalid brand ID format' });
-          }
-          const brandId = new mongoose.Types.ObjectId(req.query.brand);
-          andFilters.push({ brand: brandId });
-        }
-        if (req.query.category) {
-          if (!mongoose.Types.ObjectId.isValid(req.query.category)) {
-            return res.status(400).json({ success: false, message: 'Invalid category ID format' });
-          }
-          const categoryId = new mongoose.Types.ObjectId(req.query.category);
-          andFilters.push({ category: categoryId });
-        }
-        if (req.query.minPrice || req.query.maxPrice) {
-          andFilters.push({
-            price: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) }
-          });
-        }
-
-        const solarQuery = andFilters.length > 0 ? { $and: andFilters } : {};
-
-        // Fetch all solar models
-        const [solarPCUProducts, solarPVProducts, solarStreetLightProducts] = await Promise.all([
-          SolarPCU.find(solarQuery).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean(),
-          SolarPV.find(solarQuery).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean(),
-          SolarStreetLight.find(solarQuery).populate('brand', 'name logo').populate('category', 'name').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean()
+        const [solarPCU, solarPV, solarStreetLight] = await Promise.all([
+          SolarPCU.find(solarQuery).populate('brand category').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean(),
+          SolarPV.find(solarQuery).populate('brand category').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean(),
+          SolarStreetLight.find(solarQuery).populate('brand category').sort({ createdAt: -1 }).skip(startIndex).limit(limit).lean()
         ]);
 
-     
-        const [solarPCUCount, solarPVCount, solarStreetLightCount] = await Promise.all([
+        const [count1, count2, count3] = await Promise.all([
           SolarPCU.countDocuments(solarQuery),
           SolarPV.countDocuments(solarQuery),
           SolarStreetLight.countDocuments(solarQuery)
         ]);
-        total = solarPCUCount + solarPVCount + solarStreetLightCount;
 
-        // Add prodType
-        const solarPCUWithType = solarPCUProducts.map(product => ({ ...product, prodType: 'solar-pcu' }));
-        const solarPVWithType = solarPVProducts.map(product => ({ ...product, prodType: 'solar-pv' }));
-        const solarStreetLightWithType = solarStreetLightProducts.map(product => ({ ...product, prodType: 'solar-street-light' }));
+        total = count1 + count2 + count3;
 
-        products = [...solarPCUWithType, ...solarPVWithType, ...solarStreetLightWithType];
+        const solarPCUWithType = solarPCU.map(p => ({ ...p, prodType: 'solar-pcu' }));
+        const solarPVWithType = solarPV.map(p => ({ ...p, prodType: 'solar-pv' }));
+        const solarStreetWithType = solarStreetLight.map(p => ({ ...p, prodType: 'solar-street-light' }));
 
-        // Review stats
-        if (products.length > 0) {
-          const productIds = products.map(p => p._id);
-          const reviewStats = await Review.aggregate([
-            { $match: { product: { $in: productIds } } },
-            {
-              $group: {
-                _id: '$product',
-                averageRating: { $avg: '$rating' },
-                reviewCount: { $sum: 1 }
-              }
-            }
-          ]);
-          const statsMap = reviewStats.reduce((map, item) => {
-            map[item._id.toString()] = item;
-            return map;
-          }, {});
-          products = products.map(product => {
-            const stats = statsMap[product._id.toString()];
-            return {
-              ...product,
-              averageRating: stats ? stats.averageRating : 0,
-              reviewCount: stats ? stats.reviewCount : 0,
-            };
-          });
-        }
-      } 
-      // ------------------ SINGLE MODEL BLOCK ------------------
-      else {
-    
+        products = [...solarPCUWithType, ...solarPVWithType, ...solarStreetWithType];
+        products = await appendReviewStats(products);
+      } else {
+        // --- SINGLE MODEL BLOCK ---
         let Model;
         switch (productType) {
           case 'ups': Model = UPS; break;
@@ -123,138 +128,56 @@ exports.getProducts = async (req, res) => {
           default:
             return res.status(400).json({ success: false, message: 'Invalid product type' });
         }
-        const andFilters = [];
-        if (req.query.brand) {
-          if (!mongoose.Types.ObjectId.isValid(req.query.brand)) {
-            return res.status(400).json({ success: false, message: 'Invalid brand ID format' });
+
+        const filters = buildFilters();
+        const productQuery = filters.length ? { $and: filters } : {};
+
+        if (query.$or) {
+          if (productQuery.$and) {
+            productQuery.$and.push({ $or: query.$or });
+          } else {
+            productQuery.$and = [{ $or: query.$or }];
           }
-          const brandId = new mongoose.Types.ObjectId(req.query.brand);
-          andFilters.push({ brand: brandId });
         }
-        if (req.query.category) {
-          if (!mongoose.Types.ObjectId.isValid(req.query.category)) {
-            return res.status(400).json({ success: false, message: 'Invalid category ID format' });
-          }
-          const categoryId = new mongoose.Types.ObjectId(req.query.category);
-          andFilters.push({ category: categoryId });
-        }
-        if (req.query.minPrice || req.query.maxPrice) {
-          andFilters.push({
-            $or: [
-              { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
-              { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
-            ]
-          });
-        }
-        if (andFilters.length > 0) query.$and = andFilters;
-        total = await Model.countDocuments(query);
-        products = await Model.find(query)
-          .populate('brand', 'name logo')
-          .populate('category', 'name')
+
+        total = await Model.countDocuments(productQuery);
+        products = await Model.find(productQuery)
+          .populate('brand category')
           .sort({ createdAt: -1 })
           .skip(startIndex)
           .limit(limit)
           .lean();
-        products = products.map(product => ({ ...product, prodType: productType }));
 
-        if (products.length > 0) {
-          const productIds = products.map(p => p._id);
-          const reviewStats = await Review.aggregate([
-            { $match: { product: { $in: productIds } } },
-            {
-              $group: {
-                _id: '$product',
-                averageRating: { $avg: '$rating' },
-                reviewCount: { $sum: 1 }
-              }
-            }
-          ]);
-          const statsMap = reviewStats.reduce((map, item) => {
-            map[item._id.toString()] = item;
-            return map;
-          }, {});
-          products = products.map(product => {
-            const stats = statsMap[product._id.toString()];
-            return {
-              ...product,
-              averageRating: stats ? stats.averageRating : 0,
-              reviewCount: stats ? stats.reviewCount : 0,
-            };
-          });
-        }
+        products = products.map(p => ({ ...p, prodType: productType }));
+        products = await appendReviewStats(products);
       }
-    } 
-    // =============== NO TYPE: ALL MODELS BLOCK ===============
-    else {
-      const andFilters = [];
-      if (req.query.brand) {
-        if (!mongoose.Types.ObjectId.isValid(req.query.brand)) {
-          return res.status(400).json({ success: false, message: 'Invalid brand ID format' });
-        }
-        const brandId = new mongoose.Types.ObjectId(req.query.brand);
-        andFilters.push({ brand: brandId }); // ALWAYS use ObjectId
-      }
-      if (req.query.category) {
-        if (!mongoose.Types.ObjectId.isValid(req.query.category)) {
-          return res.status(400).json({ success: false, message: 'Invalid category ID format' });
-        }
-        const categoryId = new mongoose.Types.ObjectId(req.query.category);
-        andFilters.push({ category: categoryId }); // ALWAYS use ObjectId
-      }
-      if (req.query.minPrice || req.query.maxPrice) {
-        andFilters.push({
-          $or: [
-            { sellingPrice: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } },
-            { mrp: { $gte: Number(req.query.minPrice || 0), $lte: Number(req.query.maxPrice || Infinity) } }
-          ]
-        });
-      }
-      if (andFilters.length > 0) query.$and = andFilters;
-      const productPromises = [
-        UPS.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
-        SolarPCU.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
-        SolarPV.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
-        SolarStreetLight.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
-        Inverter.find(query).populate('brand', 'name logo').populate('category', 'name').lean(),
-        Battery.find(query).populate('brand', 'name logo').populate('category', 'name').lean()
+    } else {
+      // === TYPE NOT SPECIFIED ===
+      const filters = buildFilters();
+      if (filters.length) query.$and = filters;
+
+      const productTypes = [
+        { model: UPS, type: 'ups' },
+        { model: SolarPCU, type: 'solar-pcu' },
+        { model: SolarPV, type: 'solar-pv' },
+        { model: SolarStreetLight, type: 'solar-street-light' },
+        { model: Inverter, type: 'inverter' },
+        { model: Battery, type: 'battery' }
       ];
-      const typeMap = ['ups', 'solar-pcu', 'solar-pv', 'solar-street-light', 'inverter', 'battery'];
-      const productArrays = await Promise.all(productPromises);
-      let allProducts = [];
-      productArrays.forEach((arr, idx) => {
-        const productsWithType = arr.map(product => ({ ...product, prodType: typeMap[idx] }));
-        allProducts.push(...productsWithType);
-      });
-      if (allProducts.length > 0) {
-        const productIds = allProducts.map(p => p._id);
-        const reviewStats = await Review.aggregate([
-          { $match: { product: { $in: productIds } } },
-          {
-            $group: {
-              _id: '$product',
-              averageRating: { $avg: '$rating' },
-              reviewCount: { $sum: 1 }
-            }
-          }
-        ]);
-        const statsMap = reviewStats.reduce((map, item) => {
-          map[item._id.toString()] = item;
-          return map;
-        }, {});
-        allProducts = allProducts.map(product => {
-          const stats = statsMap[product._id.toString()];
-          return {
-            ...product,
-            averageRating: stats ? stats.averageRating : 0,
-            reviewCount: stats ? stats.reviewCount : 0,
-          };
-        });
+
+      const allProducts = [];
+
+      for (const { model, type } of productTypes) {
+        const data = await model.find(query).populate('brand category').lean();
+        allProducts.push(...data.map(p => ({ ...p, prodType: type })));
       }
+
       total = allProducts.length;
       products = allProducts.slice(startIndex, startIndex + limit);
+      products = await appendReviewStats(products);
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: products.length,
       total,
@@ -266,7 +189,7 @@ exports.getProducts = async (req, res) => {
       data: products
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: error.message || 'Server Error'
     });
