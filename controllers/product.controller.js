@@ -20,7 +20,6 @@ exports.getProducts = async (req, res) => {
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
     const productType = req.query.type;
-    const capacity = req.query.capacity ? Number(req.query.capacity) : null;
 
     let query = {};
     let products = [];
@@ -36,36 +35,85 @@ exports.getProducts = async (req, res) => {
 
     const buildFilters = () => {
       const andFilters = [];
-
+    
+      // Brand filter
       if (req.query.brand && mongoose.Types.ObjectId.isValid(req.query.brand)) {
         andFilters.push({ brand: new mongoose.Types.ObjectId(req.query.brand) });
       }
-
+    
+      // Category filter
       if (req.query.category && mongoose.Types.ObjectId.isValid(req.query.category)) {
         andFilters.push({ category: new mongoose.Types.ObjectId(req.query.category) });
       }
-
+    
+      // Battery type filter (was missing in your latest code)
+      if (req.query.batteryType && productType === 'battery') {
+        andFilters.push({ batteryType: req.query.batteryType });
+      }
+    
+      // Price range filter (enhanced for battery products)
       if (req.query.minPrice || req.query.maxPrice) {
         const min = Number(req.query.minPrice || 0);
         const max = Number(req.query.maxPrice || Infinity);
-        andFilters.push({
-          $or: [
-            { price: { $gte: min, $lte: max } },
-            { mrp: { $gte: min, $lte: max } },
-            { sellingPrice: { $gte: min, $lte: max } }
-          ]
-        });
+        
+        if (productType === 'battery') {
+          // For batteries, check all price fields including battery exchange prices
+          andFilters.push({
+            $or: [
+              { price: { $gte: min, $lte: max } },
+              { mrp: { $gte: min, $lte: max } },
+              { sellingPrice: { $gte: min, $lte: max } },
+              { priceWithoutOldBattery: { $gte: min, $lte: max } },
+              { priceWithOldBattery: { $gte: min, $lte: max } }
+            ]
+          });
+        } else {
+          // For non-battery products
+          andFilters.push({
+            $or: [
+              { price: { $gte: min, $lte: max } },
+              { mrp: { $gte: min, $lte: max } },
+              { sellingPrice: { $gte: min, $lte: max } }
+            ]
+          });
+        }
       }
-
-      // Capacity filter
-      if (capacity && productType === 'battery') {
-        andFilters.push({ AH: capacity });
-      } else if (capacity && productType === 'inverter') {
-        andFilters.push({capacity });
+    
+      // Capacity range filter (new implementation with error handling)
+      if (req.query.capacityRange) {
+        try {
+          const [min, max] = req.query.capacityRange.split('-').map(Number);
+          
+          // Validate that we got valid numbers
+          if (isNaN(min) || isNaN(max)) {
+            throw new Error('Invalid capacity range format');
+          }
+          
+          if (productType === 'battery') {
+            if (max === 999) {
+              // For "> 200Ah" case
+              andFilters.push({ AH: { $gt: min } });
+            } else {
+              andFilters.push({ AH: { $gte: min, $lte: max } });
+            }
+          } else if (productType === 'inverter') {
+            if (max === 999999) {
+              // For "> 5KVA" case  
+              andFilters.push({ capacity: { $gt: min } });
+            } else {
+              andFilters.push({ capacity: { $gte: min, $lte: max } });
+            }
+          }
+        } catch (error) {
+          // You might want to handle this error or return early
+          console.error('Invalid capacity range format:', req.query.capacityRange);
+        }
       }
-
+    
       return andFilters;
     };
+    
+    
 
     const appendReviewStats = async (products) => {
       const productIds = products.map(p => p._id);
