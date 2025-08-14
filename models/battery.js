@@ -4,6 +4,11 @@ const mongoose = require('mongoose');
 const batterySchema = new mongoose.Schema({
   prodType: { type: String, default: "battery" },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
+  subcategory: { 
+    type: String, 
+    enum: ['truck_battery', '2_wheeler_battery', 'solar_battery', 'genset_battery', 'four_wheeler_battery'],
+    required: true 
+  },
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
   name: { type: String, required: true },
   description: String,

@@ -26,11 +26,19 @@ exports.getAllBatteries = async (req, res) => {
     // Filter by category
     if (req.query.category) query.category = req.query.category;
 
+    // Filter by subcategory
+    if (req.query.subcategory) query.subcategory = req.query.subcategory;
+
     // Filter by brand
     if (req.query.brand) query.brand = req.query.brand;
 
     // Filter by batteryType
     if (req.query.batteryType) query.batteryType = req.query.batteryType;
+
+    // Filter by isFeatured
+    if (req.query.isFeatured !== undefined) {
+      query.isFeatured = req.query.isFeatured === 'true';
+    }
 
     // Filter by AH (Ampere Hour) range
     if (req.query.minAH || req.query.maxAH) {
@@ -63,6 +71,7 @@ exports.getAllBatteries = async (req, res) => {
     const batteries = await Battery.find(query)
       .populate('category', 'name')
       .populate('brand', 'name')
+      .populate('reviews')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -76,7 +85,7 @@ exports.getAllBatteries = async (req, res) => {
         totalPages: Math.ceil(total / limit),
         total
       },
-      data: batteries
+       batteries
     });
   } catch (error) {
     console.error(error);
@@ -86,6 +95,7 @@ exports.getAllBatteries = async (req, res) => {
     });
   }
 };
+
 
 // @desc    Get single Battery
 // @route   GET /api/batteries/:id
@@ -115,6 +125,7 @@ exports.createBattery = async (req, res) => {
     const {
       brand,
       category,
+      subcategory,
       name,
       description,
       features,
@@ -129,8 +140,32 @@ exports.createBattery = async (req, res) => {
       isFeatured
     } = req.body;
 
-    if (!brand || !category || !name) {
-      return res.status(400).json({ success: false, message: 'Brand, Category, and Name are required' });
+    // Required field validation
+    if (!brand || !category || !subcategory || !name) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Brand, Category, Subcategory, and Name are required' 
+      });
+    }
+
+    // Validate subcategory enum
+    const validSubcategories = ['truck_battery', '2_wheeler_battery', 'solar_battery', 'genset_battery', 'four_wheeler_battery'];
+    if (!validSubcategories.includes(subcategory)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}` 
+      });
+    }
+
+    // Validate batteryType enum if provided
+    if (batteryType) {
+      const validBatteryTypes = ['li ion', 'lead acid', 'smf'];
+      if (!validBatteryTypes.includes(batteryType)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Invalid battery type. Must be one of: ${validBatteryTypes.join(', ')}` 
+        });
+      }
     }
 
     // Handle image upload if file is provided
@@ -141,15 +176,37 @@ exports.createBattery = async (req, res) => {
     let featuresArray = [];
     if (features) {
       if (typeof features === 'string') {
-        featuresArray = JSON.parse(features);
+        try {
+          featuresArray = JSON.parse(features);
+        } catch (error) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Invalid features format. Must be a valid JSON array.' 
+          });
+        }
       } else if (Array.isArray(features)) {
         featuresArray = features;
       }
     }
 
+    // Validate numeric fields
+    if (AH && isNaN(Number(AH))) {
+      return res.status(400).json({ success: false, message: 'AH must be a valid number' });
+    }
+    if (mrp && isNaN(Number(mrp))) {
+      return res.status(400).json({ success: false, message: 'MRP must be a valid number' });
+    }
+    if (priceWithoutOldBattery && isNaN(Number(priceWithoutOldBattery))) {
+      return res.status(400).json({ success: false, message: 'Price without old battery must be a valid number' });
+    }
+    if (priceWithOldBattery && isNaN(Number(priceWithOldBattery))) {
+      return res.status(400).json({ success: false, message: 'Price with old battery must be a valid number' });
+    }
+
     const battery = await Battery.create({
       brand,
       category,
+      subcategory,
       name,
       description,
       features: featuresArray,
@@ -182,11 +239,14 @@ exports.updateBattery = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Battery not found' });
     }
 
-    // Name duplicate check (optional)
-    if (req.body.name && req.body.name !== battery.name) {
-      const existing = await Battery.findOne({ name: req.body.name, _id: { $ne: req.params.id } });
-      if (existing) {
-        return res.status(400).json({ success: false, message: `Battery with name ${req.body.name} already exists` });
+    // Validate subcategory enum if provided
+    if (req.body.subcategory) {
+      const validSubcategories = ['truck_battery', '2_wheeler_battery', 'solar_battery', 'genset_battery', 'four_wheeler_battery'];
+      if (!validSubcategories.includes(req.body.subcategory)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}` 
+        });
       }
     }
 
@@ -198,24 +258,55 @@ exports.updateBattery = async (req, res) => {
     // Features field
     if (req.body.features) {
       if (typeof req.body.features === 'string') {
-        req.body.features = JSON.parse(req.body.features);
+        try {
+          req.body.features = JSON.parse(req.body.features);
+        } catch (error) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Invalid features format. Must be a valid JSON array.' 
+          });
+        }
       }
     }
 
     // Convert numeric fields
     if (req.body.AH) req.body.AH = Number(req.body.AH);
     if (req.body.mrp) req.body.mrp = Number(req.body.mrp);
-    if (req.body.priceWithoutOldBattery) req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
-    if (req.body.priceWithOldBattery) req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
+    if (req.body.priceWithoutOldBattery && req.body.priceWithoutOldBattery !== '') {
+      req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
+    } else {
+      req.body.priceWithoutOldBattery = null;
+    }
+    if (req.body.priceWithOldBattery && req.body.priceWithOldBattery !== '') {
+      req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
+    } else {
+      req.body.priceWithOldBattery = null;
+    }
 
-    battery = await Battery.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    // Handle boolean conversion for isFeatured
+    if (req.body.isFeatured !== undefined) {
+      req.body.isFeatured = typeof req.body.isFeatured === 'string' ? req.body.isFeatured === 'true' : !!req.body.isFeatured;
+    }
 
-    res.status(200).json({ success: true, data: battery });
+    // Use findByIdAndUpdate with upsert and strict options
+    battery = await Battery.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { 
+        new: true, 
+        runValidators: true,
+        strict: false, // This allows adding new fields
+        upsert: false
+      }
+    );
+
+    res.status(200).json({ success: true,  battery });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message || 'Server Error' });
   }
 };
+
 
 // @desc    Toggle Battery status (activate/deactivate)
 // @route   PUT /api/batteries/:id/status
