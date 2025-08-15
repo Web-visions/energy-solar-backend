@@ -41,10 +41,14 @@ exports.getProducts = async (req, res) => {
         andFilters.push({ brand: new mongoose.Types.ObjectId(req.query.brand) });
       }
     
-      // Category filter
-      if (req.query.category && mongoose.Types.ObjectId.isValid(req.query.category)) {
-        andFilters.push({ category: new mongoose.Types.ObjectId(req.query.category) });
-      }
+     if (
+  productType === "battery" &&
+  req.query.subcategory &&
+  typeof req.query.subcategory === "string"
+) {
+  andFilters.push({ subcategory: req.query.subcategory });
+}
+
     
       // Battery type filter (was missing in your latest code)
       if (req.query.batteryType && productType === 'battery') {
