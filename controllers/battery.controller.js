@@ -6,16 +6,13 @@ const fileUpload = require('../utils/fileUpload');
 // @access  Public
 exports.getAllBatteries = async (req, res) => {
   try {
-    // Pagination
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
 
-    // Create base query
     const query = {};
 
-    // Search functionality
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -23,41 +20,38 @@ exports.getAllBatteries = async (req, res) => {
       ];
     }
 
-    // Filter by category
     if (req.query.category) query.category = req.query.category;
-
-    // Filter by subcategory
     if (req.query.subcategory) query.subcategory = req.query.subcategory;
-
-    // Filter by brand
     if (req.query.brand) query.brand = req.query.brand;
-
-    // Filter by batteryType
     if (req.query.batteryType) query.batteryType = req.query.batteryType;
-
-    // Filter by isFeatured
     if (req.query.isFeatured !== undefined) {
       query.isFeatured = req.query.isFeatured === 'true';
     }
 
-    // Filter by AH (Ampere Hour) range
     if (req.query.minAH || req.query.maxAH) {
       query.AH = {};
       if (req.query.minAH) query.AH.$gte = Number(req.query.minAH);
       if (req.query.maxAH) query.AH.$lte = Number(req.query.maxAH);
     }
 
-    // Filter by price range (MRP)
     if (req.query.minPrice || req.query.maxPrice) {
       query.mrp = {};
       if (req.query.minPrice) query.mrp.$gte = Number(req.query.minPrice);
       if (req.query.maxPrice) query.mrp.$lte = Number(req.query.maxPrice);
     }
 
-    // Get total count
+    if (req.query.manufacturer) {
+      query.manufacturer = req.query.manufacturer;
+    }
+    if (req.query.productLine) {
+      query.productLine = req.query.productLine;
+    }
+    if (req.query.vehicleModel) {
+      query.vehicleModel = req.query.vehicleModel;
+    }
+
     const total = await Battery.countDocuments(query);
 
-    // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
       const sortField = req.query.sortBy;
@@ -67,10 +61,14 @@ exports.getAllBatteries = async (req, res) => {
       sortOption = { createdAt: -1 };
     }
 
-    // Query with pagination
     const batteries = await Battery.find(query)
       .populate('category', 'name')
       .populate('brand', 'name')
+      .populate('productLine', 'name')
+      .populate('manufacturer', 'name')
+      .populate('vehicleModel', 'name manufacturer')
+      .populate('compatibleManufacturers', 'name')
+      .populate('compatibleModels', 'name manufacturer')
       .populate('reviews')
       .sort(sortOption)
       .skip(startIndex)
@@ -85,7 +83,7 @@ exports.getAllBatteries = async (req, res) => {
         totalPages: Math.ceil(total / limit),
         total
       },
-       batteries
+      batteries
     });
   } catch (error) {
     console.error(error);
@@ -96,7 +94,6 @@ exports.getAllBatteries = async (req, res) => {
   }
 };
 
-
 // @desc    Get single Battery
 // @route   GET /api/batteries/:id
 // @access  Public
@@ -104,18 +101,25 @@ exports.getBattery = async (req, res) => {
   try {
     const battery = await Battery.findById(req.params.id)
       .populate('category', 'name')
-      .populate('brand', 'name');
+      .populate('brand', 'name')
+      .populate('productLine', 'name')
+      .populate('manufacturer', 'name')
+      .populate('vehicleModel', 'name manufacturer')
+      .populate('compatibleManufacturers', 'name')
+      .populate('compatibleModels', 'name manufacturer')
+      .populate('reviews');
 
     if (!battery) {
       return res.status(404).json({ success: false, message: 'Battery not found' });
     }
 
-    res.status(200).json({ success: true, data: battery });
+    res.status(200).json({ success: true, battery });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message || 'Server Error' });
   }
 };
+
 
 // @desc    Create new Battery
 // @route   POST /api/batteries
@@ -123,6 +127,7 @@ exports.getBattery = async (req, res) => {
 exports.createBattery = async (req, res) => {
   try {
     const {
+      productLine, // Added productLine
       brand,
       category,
       subcategory,
@@ -137,23 +142,28 @@ exports.createBattery = async (req, res) => {
       mrp,
       priceWithoutOldBattery,
       priceWithOldBattery,
-      isFeatured
+      isFeatured,
+      // NEW VEHICLE/MANUFACTURER FIELDS
+      manufacturer,
+      vehicleModel,
+      compatibleManufacturers,
+      compatibleModels
     } = req.body;
 
     // Required field validation
     if (!brand || !category || !subcategory || !name) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Brand, Category, Subcategory, and Name are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Brand, Category, Subcategory, and Name are required'
       });
     }
 
     // Validate subcategory enum
     const validSubcategories = ['truck_battery', '2_wheeler_battery', 'solar_battery', 'genset_battery', 'four_wheeler_battery'];
     if (!validSubcategories.includes(subcategory)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}` 
+      return res.status(400).json({
+        success: false,
+        message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}`
       });
     }
 
@@ -161,9 +171,9 @@ exports.createBattery = async (req, res) => {
     if (batteryType) {
       const validBatteryTypes = ['li ion', 'lead acid', 'smf'];
       if (!validBatteryTypes.includes(batteryType)) {
-        return res.status(400).json({ 
-          success: false, 
-          message: `Invalid battery type. Must be one of: ${validBatteryTypes.join(', ')}` 
+        return res.status(400).json({
+          success: false,
+          message: `Invalid battery type. Must be one of: ${validBatteryTypes.join(', ')}`
         });
       }
     }
@@ -179,13 +189,43 @@ exports.createBattery = async (req, res) => {
         try {
           featuresArray = JSON.parse(features);
         } catch (error) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Invalid features format. Must be a valid JSON array.' 
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid features format. Must be a valid JSON array.'
           });
         }
       } else if (Array.isArray(features)) {
         featuresArray = features;
+      }
+    }
+
+    // Handle compatibleManufacturers array
+    let compatibleManufacturersArray = [];
+    if (compatibleManufacturers) {
+      if (typeof compatibleManufacturers === 'string') {
+        try {
+          compatibleManufacturersArray = JSON.parse(compatibleManufacturers);
+        } catch (error) {
+          // If it's a single string ID, convert to array
+          compatibleManufacturersArray = [compatibleManufacturers];
+        }
+      } else if (Array.isArray(compatibleManufacturers)) {
+        compatibleManufacturersArray = compatibleManufacturers;
+      }
+    }
+
+    // Handle compatibleModels array
+    let compatibleModelsArray = [];
+    if (compatibleModels) {
+      if (typeof compatibleModels === 'string') {
+        try {
+          compatibleModelsArray = JSON.parse(compatibleModels);
+        } catch (error) {
+          // If it's a single string ID, convert to array
+          compatibleModelsArray = [compatibleModels];
+        }
+      } else if (Array.isArray(compatibleModels)) {
+        compatibleModelsArray = compatibleModels;
       }
     }
 
@@ -204,6 +244,7 @@ exports.createBattery = async (req, res) => {
     }
 
     const battery = await Battery.create({
+      productLine: productLine || undefined, // Added productLine
       brand,
       category,
       subcategory,
@@ -219,10 +260,15 @@ exports.createBattery = async (req, res) => {
       priceWithoutOldBattery: priceWithoutOldBattery ? Number(priceWithoutOldBattery) : undefined,
       priceWithOldBattery: priceWithOldBattery ? Number(priceWithOldBattery) : undefined,
       image: imagePath,
-      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured
+      isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured,
+      // NEW VEHICLE/MANUFACTURER FIELDS
+      manufacturer: manufacturer || undefined,
+      vehicleModel: vehicleModel || undefined,
+      compatibleManufacturers: compatibleManufacturersArray,
+      compatibleModels: compatibleModelsArray
     });
 
-    res.status(201).json({ success: true, data: battery });
+    res.status(201).json({ success: true, battery });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message || 'Server Error' });
@@ -243,9 +289,20 @@ exports.updateBattery = async (req, res) => {
     if (req.body.subcategory) {
       const validSubcategories = ['truck_battery', '2_wheeler_battery', 'solar_battery', 'genset_battery', 'four_wheeler_battery'];
       if (!validSubcategories.includes(req.body.subcategory)) {
-        return res.status(400).json({ 
-          success: false, 
-          message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}` 
+        return res.status(400).json({
+          success: false,
+          message: `Invalid subcategory. Must be one of: ${validSubcategories.join(', ')}`
+        });
+      }
+    }
+
+    // Validate batteryType enum if provided
+    if (req.body.batteryType) {
+      const validBatteryTypes = ['li ion', 'lead acid', 'smf'];
+      if (!validBatteryTypes.includes(req.body.batteryType)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid battery type. Must be one of: ${validBatteryTypes.join(', ')}`
         });
       }
     }
@@ -255,17 +312,49 @@ exports.updateBattery = async (req, res) => {
       req.body.image = await fileUpload.saveFile(req.file, battery.image);
     }
 
-    // Features field
+    // Features field handling
     if (req.body.features) {
       if (typeof req.body.features === 'string') {
         try {
           req.body.features = JSON.parse(req.body.features);
         } catch (error) {
-          return res.status(400).json({ 
-            success: false, 
-            message: 'Invalid features format. Must be a valid JSON array.' 
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid features format. Must be a valid JSON array.'
           });
         }
+      }
+    }
+
+    // Handle compatibleManufacturers array
+    if (req.body.compatibleManufacturers !== undefined) {
+      if (req.body.compatibleManufacturers === '' || req.body.compatibleManufacturers === null) {
+        req.body.compatibleManufacturers = [];
+      } else if (typeof req.body.compatibleManufacturers === 'string') {
+        try {
+          req.body.compatibleManufacturers = JSON.parse(req.body.compatibleManufacturers);
+        } catch (error) {
+          // If it's a single string ID, convert to array
+          req.body.compatibleManufacturers = [req.body.compatibleManufacturers];
+        }
+      } else if (!Array.isArray(req.body.compatibleManufacturers)) {
+        req.body.compatibleManufacturers = [];
+      }
+    }
+
+    // Handle compatibleModels array
+    if (req.body.compatibleModels !== undefined) {
+      if (req.body.compatibleModels === '' || req.body.compatibleModels === null) {
+        req.body.compatibleModels = [];
+      } else if (typeof req.body.compatibleModels === 'string') {
+        try {
+          req.body.compatibleModels = JSON.parse(req.body.compatibleModels);
+        } catch (error) {
+          // If it's a single string ID, convert to array
+          req.body.compatibleModels = [req.body.compatibleModels];
+        }
+      } else if (!Array.isArray(req.body.compatibleModels)) {
+        req.body.compatibleModels = [];
       }
     }
 
@@ -288,24 +377,37 @@ exports.updateBattery = async (req, res) => {
       req.body.isFeatured = typeof req.body.isFeatured === 'string' ? req.body.isFeatured === 'true' : !!req.body.isFeatured;
     }
 
-    // Use findByIdAndUpdate with upsert and strict options
+    // Handle empty string to undefined conversion for optional ObjectId fields
+    if (req.body.productLine === '') req.body.productLine = undefined;
+    if (req.body.manufacturer === '') req.body.manufacturer = undefined;
+    if (req.body.vehicleModel === '') req.body.vehicleModel = undefined;
+
+    // Use findByIdAndUpdate with options
     battery = await Battery.findByIdAndUpdate(
-      req.params.id, 
-      req.body, 
-      { 
-        new: true, 
+      req.params.id,
+      req.body,
+      {
+        new: true,
         runValidators: true,
-        strict: false, // This allows adding new fields
+        strict: false,
         upsert: false
       }
-    );
+    )
+      .populate('category', 'name')
+      .populate('brand', 'name')
+      .populate('productLine', 'name')
+      .populate('manufacturer', 'name')
+      .populate('vehicleModel', 'name manufacturer')
+      .populate('compatibleManufacturers', 'name')
+      .populate('compatibleModels', 'name manufacturer');
 
-    res.status(200).json({ success: true,  battery });
+    res.status(200).json({ success: true, battery });
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message || 'Server Error' });
   }
 };
+
 
 
 // @desc    Toggle Battery status (activate/deactivate)

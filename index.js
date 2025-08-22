@@ -28,6 +28,9 @@ const orderRoutes = require('./routes/order.routes')
 const paymentRoutes = require('./routes/payment.routes')
 const bulkLeadRoutes = require('./routes/bulkLead.routes');
 const adminStatsRoutes = require('./routes/adminStats.routes');
+const productLineRoutes = require('./routes/productline.routes');
+const manufacturerRoutes = require('./routes/manufacturer.routes')
+const vehicleModelRoutes = require('./routes/vehicleModel.routes')
 
 // Initialize express app
 const app = express();
@@ -78,7 +81,9 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/payment', paymentRoutes)
 app.use('/api/bulk-orders', bulkLeadRoutes);
 app.use('/api/admin-stats', adminStatsRoutes);
-// app.use('/api/admin', adminRoutes);
+app.use('/api/product-lines', productLineRoutes);
+app.use('/api/manufacturers', manufacturerRoutes)
+app.use('/api/vehicle-models', vehicleModelRoutes)
 
 // Root route
 app.get('/', (req, res) => {
