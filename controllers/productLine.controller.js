@@ -102,7 +102,10 @@ exports.getProductLineById = async (req, res) => {
 // Get All ProductLines
 exports.getAllProductLines = async (req, res) => {
     try {
-        const productLines = await ProductLine.find().sort({ createdAt: -1 });
+        const productLines = await ProductLine.find().sort({ createdAt: -1 }).select({
+            _id: 1,
+            name: 1,
+        });
 
         res.status(200).json({
             success: true,
