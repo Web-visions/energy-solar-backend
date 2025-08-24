@@ -5,6 +5,7 @@ const upsSchema = new mongoose.Schema({
   prodType: { type: String, default: "ups" },
   category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
+  productLine: { type: mongoose.Schema.Types.ObjectId, ref: "ProductLine" },
   name: { type: String, required: true },
   image: String,
   description: String,

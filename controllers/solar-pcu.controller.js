@@ -72,7 +72,7 @@ exports.getAllSolarPCUs = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarPCUs = await SolarPCU.find(query)
       .populate('category', 'name')
-      // .populate('reviews')
+      .populate('productLine', 'name')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -104,7 +104,7 @@ exports.getSolarPCU = async (req, res) => {
   try {
     const solarPCU = await SolarPCU.findById(req.params.id)
       .populate('category', 'name')
-    // .populate('reviews');
+      .populate('productLine', 'name') // <-- added
 
     if (!solarPCU) {
       return res.status(404).json({
@@ -145,7 +145,8 @@ exports.createSolarPCU = async (req, res) => {
       dimension,
       weight,
       price,
-      isFeatured
+      isFeatured,
+      productLine
     } = req.body;
 
     // Validate required fields
@@ -189,6 +190,7 @@ exports.createSolarPCU = async (req, res) => {
     const solarPCU = await SolarPCU.create({
       category,
       name,
+      productLine,
       description,
       features: features ? JSON.parse(features) : [],
       brand,

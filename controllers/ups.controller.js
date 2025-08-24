@@ -59,6 +59,7 @@ exports.getAllUPS = async (req, res) => {
     const upsList = await UPS.find(query)
       .populate('category', 'name')
       .populate('brand', 'name')
+      .populate('productLine', 'name')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -90,7 +91,8 @@ exports.getUPS = async (req, res) => {
   try {
     const ups = await UPS.findById(req.params.id)
       .populate('category', 'name')
-      .populate('brand', 'name');
+      .populate('brand', 'name')
+      .populate('productLine', 'name');
     if (!ups) {
       return res.status(404).json({
         success: false,
@@ -128,6 +130,7 @@ exports.createUPS = async (req, res) => {
       inputFreq,
       outputFreq,
       dimension,
+      productLine,
       warranty,
       mrp,
       sellingPrice,
@@ -173,6 +176,7 @@ exports.createUPS = async (req, res) => {
       category,
       brand,
       name,
+      productLine,
       description,
       features: features ? JSON.parse(features) : [],
       type,
@@ -254,6 +258,8 @@ exports.updateUPS = async (req, res) => {
     // Brand/category can be updated
     if (req.body.brand) ups.brand = req.body.brand;
     if (req.body.category) ups.category = req.body.category;
+    if (req.body.productLine) ups.productLine = req.body.productLine;
+
 
     ups = await UPS.findByIdAndUpdate(
       req.params.id,

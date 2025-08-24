@@ -7,7 +7,6 @@ const fileUpload = require('../utils/fileUpload');
 // @access  Public
 exports.getAllInverters = async (req, res) => {
   try {
-    // Pagination
     const page = parseInt(req.query.page, 10) || 1;
     let limit = 10;
     if (req.query.isFeatured === 'true') {
@@ -18,10 +17,8 @@ exports.getAllInverters = async (req, res) => {
     const startIndex = (page - 1) * limit;
     const search = req.query.search || '';
 
-    // Create base query
     const query = {};
 
-    // Search functionality
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -29,43 +26,45 @@ exports.getAllInverters = async (req, res) => {
       ];
     }
 
-    // Filter by category
     if (req.query.category) {
       query.category = req.query.category;
     }
 
-    // Filter by capacity range
+    if (req.query.brand) {
+      query.brand = req.query.brand;
+    }
+
+    if (req.query.productLine) {
+      query.productLine = req.query.productLine;
+    }
+
     if (req.query.minCapacity || req.query.maxCapacity) {
       query.capacity = {};
       if (req.query.minCapacity) query.capacity.$gte = Number(req.query.minCapacity);
       if (req.query.maxCapacity) query.capacity.$lte = Number(req.query.maxCapacity);
     }
 
-    // Filter by price range (MRP)
     if (req.query.minPrice || req.query.maxPrice) {
       query.mrp = {};
       if (req.query.minPrice) query.mrp.$gte = Number(req.query.minPrice);
       if (req.query.maxPrice) query.mrp.$lte = Number(req.query.maxPrice);
     }
 
-    // Get total count with filters applied
     const total = await Inverter.countDocuments(query);
 
-    // Sorting
     let sortOption = {};
     if (req.query.sortBy) {
       const sortField = req.query.sortBy;
       const sortOrder = req.query.sortOrder === 'desc' ? -1 : 1;
       sortOption[sortField] = sortOrder;
     } else {
-      // Default sort by createdAt desc
       sortOption = { createdAt: -1 };
     }
 
-    // Query with pagination, filtering, and sorting
     const inverters = await Inverter.find(query)
       .populate('category', 'name')
-      // .populate('reviews')
+      .populate('brand', 'name')
+      .populate('productLine', 'name')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -97,7 +96,8 @@ exports.getInverter = async (req, res) => {
   try {
     const inverter = await Inverter.findById(req.params.id)
       .populate('category', 'name')
-    // .populate('reviews');
+      .populate('brand', 'name')
+      .populate('productLine', 'name');
 
     if (!inverter) {
       return res.status(404).json({
@@ -126,6 +126,7 @@ exports.createInverter = async (req, res) => {
   try {
     const {
       category,
+      productLine,
       name,
       brand,
       description,
@@ -138,37 +139,30 @@ exports.createInverter = async (req, res) => {
       isFeatured
     } = req.body;
 
-    // Validate required fields
     if (!category) {
-      return res.status(400).json({
-        success: false,
-        message: 'Category is required'
-      });
+      return res.status(400).json({ success: false, message: 'Category is required' });
     }
 
     if (!brand) {
-      return res.status(400).json({
-        success: false,
-        message: 'Brand is required'
-      });
+      return res.status(400).json({ success: false, message: 'Brand is required' });
     }
 
     if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name is required'
-      });
+      return res.status(400).json({ success: false, message: 'Name is required' });
     }
 
     const foundBrand = await mongoose.model('Brand').findById(brand);
     if (!foundBrand) {
-      return res.status(404).json({
-        success: false,
-        message: 'Brand not found'
-      });
+      return res.status(404).json({ success: false, message: 'Brand not found' });
     }
 
-    // Check if Inverter with this name already exists
+    if (productLine) {
+      const foundProductLine = await mongoose.model('ProductLine').findById(productLine);
+      if (!foundProductLine) {
+        return res.status(404).json({ success: false, message: 'Product Line not found' });
+      }
+    }
+
     const existingInverter = await Inverter.findOne({ name });
     if (existingInverter) {
       return res.status(400).json({
@@ -177,15 +171,14 @@ exports.createInverter = async (req, res) => {
       });
     }
 
-    // Handle image upload if file is provided
     let imagePath = null;
     if (req.file) {
       imagePath = await fileUpload.saveFile(req.file);
     }
 
-    // Create Inverter
     const inverter = await Inverter.create({
       category,
+      productLine: productLine || undefined,
       name,
       brand,
       description,
@@ -226,23 +219,11 @@ exports.updateInverter = async (req, res) => {
       });
     }
 
-    // Check if name is being changed and if it already exists
     if (req.body.name && req.body.name !== inverter.name) {
       const existingInverter = await Inverter.findOne({
         name: req.body.name,
         _id: { $ne: req.params.id }
       });
-
-      if (req.body.brand) {
-        const foundBrand = await mongoose.model('Brand').findById(req.body.brand);
-        if (!foundBrand) {
-          return res.status(404).json({
-            success: false,
-            message: 'Brand not found'
-          });
-        }
-      }
-
       if (existingInverter) {
         return res.status(400).json({
           success: false,
@@ -251,29 +232,37 @@ exports.updateInverter = async (req, res) => {
       }
     }
 
-    // Handle image upload if file is provided
+    if (req.body.brand) {
+      const foundBrand = await mongoose.model('Brand').findById(req.body.brand);
+      if (!foundBrand) {
+        return res.status(404).json({ success: false, message: 'Brand not found' });
+      }
+    }
+
+    if (req.body.productLine) {
+      const foundProductLine = await mongoose.model('ProductLine').findById(req.body.productLine);
+      if (!foundProductLine) {
+        return res.status(404).json({ success: false, message: 'Product Line not found' });
+      }
+    }
+
     if (req.file) {
       const imagePath = await fileUpload.saveFile(req.file, inverter.image);
       req.body.image = imagePath;
     }
 
-    // Parse features if provided as string
     if (req.body.features && typeof req.body.features === 'string') {
       req.body.features = JSON.parse(req.body.features);
     }
 
-    // Convert numeric fields
     if (req.body.capacity) req.body.capacity = Number(req.body.capacity);
     if (req.body.mrp) req.body.mrp = Number(req.body.mrp);
-    if (req.body.sellingPrice) req.body.sellingPrice = Number(req.body.sellingPrice)
-    // Update Inverter
+    if (req.body.sellingPrice) req.body.sellingPrice = Number(req.body.sellingPrice);
+
     inverter = await Inverter.findByIdAndUpdate(
       req.params.id,
       req.body,
-      {
-        new: true,
-        runValidators: true
-      }
+      { new: true, runValidators: true }
     );
 
     res.status(200).json({
@@ -303,11 +292,9 @@ exports.deleteInverter = async (req, res) => {
       });
     }
 
-    // Remove from all user carts before deleting
     const { removeProductFromAllCarts } = require('./cart.controller');
     await removeProductFromAllCarts('inverter', req.params.id);
 
-    // Delete image if exists
     if (inverter.image) {
       await fileUpload.deleteFile(inverter.image);
     }

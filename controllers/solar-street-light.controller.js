@@ -60,7 +60,7 @@ exports.getAllSolarStreetLights = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarStreetLights = await SolarStreetLight.find(query)
       .populate('category', 'name')
-      // .populate('reviews')
+      .populate('productLine', 'name') // <-- added
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -92,7 +92,7 @@ exports.getSolarStreetLight = async (req, res) => {
   try {
     const solarStreetLight = await SolarStreetLight.findById(req.params.id)
       .populate('category', 'name')
-    // .populate('reviews');
+      .populate('productLine', 'name') // <-- added
 
     if (!solarStreetLight) {
       return res.status(404).json({
@@ -129,7 +129,8 @@ exports.createSolarStreetLight = async (req, res) => {
       replacementPolicy,
       staticTags,
       price,
-      isFeatured
+      isFeatured,
+      productLine
     } = req.body;
 
     // Validate required fields
@@ -173,6 +174,7 @@ exports.createSolarStreetLight = async (req, res) => {
     const solarStreetLight = await SolarStreetLight.create({
       category,
       name,
+      productLine,
       description,
       brand,
       modelName,

@@ -68,7 +68,7 @@ exports.getAllSolarPVModules = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarPVModules = await SolarPVModule.find(query)
       .populate('category', 'name')
-      // .populate('reviews')
+      .populate('productLine', 'name') // <-- added
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);
@@ -100,7 +100,8 @@ exports.getSolarPVModule = async (req, res) => {
   try {
     const solarPVModule = await SolarPVModule.findById(req.params.id)
       .populate('category', 'name')
-    // .populate('reviews');
+      .populate('productLine', 'name') // <-- added
+
 
     if (!solarPVModule) {
       return res.status(404).json({
@@ -143,7 +144,8 @@ exports.createSolarPVModule = async (req, res) => {
       replacementPolicy,
       staticTags,
       price,
-      isFeatured
+      isFeatured,
+      productLine
     } = req.body;
 
     // Validate required fields
@@ -189,6 +191,7 @@ exports.createSolarPVModule = async (req, res) => {
     // Create Solar PV Module
     const solarPVModule = await SolarPVModule.create({
       category,
+      productLine,
       name,
       description,
       brand,
