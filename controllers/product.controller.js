@@ -20,11 +20,34 @@ exports.getProducts = async (req, res) => {
     const offset = (pageNumber - 1) * pageSize;
     const searchText = req.query.search || '';
     const hasBatterySignals = Boolean(req.query.productLine || req.query.manufacturer || req.query.vehicleModel);
-    const effectiveType = hasBatterySignals ? 'battery' : req.query.type;
+    // const effectiveType = hasBatterySignals ? 'battery' : req.query.type;
     const debugMode = req.query.debug === '1';
 
-    console.log('\n[products] incomingQuery', JSON.stringify(req.query, null, 2));
-    console.log('[products] effectiveType', effectiveType || '(all)');
+
+    const effectiveType = (req.query.type && String(req.query.type).toLowerCase() === 'battery')
+      ? 'battery'
+      : undefined;
+
+    console.log('[products] incoming type:', req.query.type);
+    console.log('[products] effectiveType:', effectiveType);
+
+    const parseCapacityRange = (raw) => {
+      if (!raw) return { min: null, max: null };
+      const value = String(raw).trim();
+      if (value.endsWith('+')) {
+        const minPart = Number(value.slice(0, -1));
+        return Number.isFinite(minPart) ? { min: minPart, max: null } : { min: null, max: null };
+      }
+      const [minStr, maxStr] = value.split('-');
+      const minParsed = Number(minStr);
+      const maxParsed = Number(maxStr);
+      return {
+        min: Number.isFinite(minParsed) ? minParsed : null,
+        max: Number.isFinite(maxParsed) ? maxParsed : null
+      };
+    };
+
+    const capacityFilter = parseCapacityRange(req.query.capacityRange);
 
     let textSearchClause = {};
     if (searchText) {
@@ -47,12 +70,12 @@ exports.getProducts = async (req, res) => {
           requiredClauses.push({ productLine: new mongoose.Types.ObjectId(req.query.productLine) });
         }
         if (req.query.manufacturer && mongoose.Types.ObjectId.isValid(req.query.manufacturer)) {
-          const id = new mongoose.Types.ObjectId(req.query.manufacturer);
-          optionalFitmentClauses.push({ $or: [{ manufacturer: id }, { compatibleManufacturers: id }] });
+          const manufacturerId = new mongoose.Types.ObjectId(req.query.manufacturer);
+          optionalFitmentClauses.push({ $or: [{ manufacturer: manufacturerId }, { compatibleManufacturers: manufacturerId }] });
         }
         if (req.query.vehicleModel && mongoose.Types.ObjectId.isValid(req.query.vehicleModel)) {
-          const id = new mongoose.Types.ObjectId(req.query.vehicleModel);
-          optionalFitmentClauses.push({ $or: [{ vehicleModel: id }, { compatibleModels: id }] });
+          const modelId = new mongoose.Types.ObjectId(req.query.vehicleModel);
+          optionalFitmentClauses.push({ $or: [{ vehicleModel: modelId }, { compatibleModels: modelId }] });
         }
         if (req.query.batteryType) {
           requiredClauses.push({ batteryType: req.query.batteryType });
@@ -72,48 +95,26 @@ exports.getProducts = async (req, res) => {
       if (req.query.minPrice || req.query.maxPrice) {
         const minPrice = Number(req.query.minPrice || 0);
         const maxPrice = Number(req.query.maxPrice || Infinity);
+        const priceOr = [
+          { price: { $gte: minPrice, $lte: maxPrice } },
+          { mrp: { $gte: minPrice, $lte: maxPrice } },
+          { sellingPrice: { $gte: minPrice, $lte: maxPrice } }
+        ];
         if (mode === 'battery') {
-          requiredClauses.push({
-            $or: [
-              { price: { $gte: minPrice, $lte: maxPrice } },
-              { mrp: { $gte: minPrice, $lte: maxPrice } },
-              { sellingPrice: { $gte: minPrice, $lte: maxPrice } },
-              { priceWithoutOldBattery: { $gte: minPrice, $lte: maxPrice } },
-              { priceWithOldBattery: { $gte: minPrice, $lte: maxPrice } }
-            ]
-          });
-        } else {
-          requiredClauses.push({
-            $or: [
-              { price: { $gte: minPrice, $lte: maxPrice } },
-              { mrp: { $gte: minPrice, $lte: maxPrice } },
-              { sellingPrice: { $gte: minPrice, $lte: maxPrice } }
-            ]
-          });
+          priceOr.push({ priceWithoutOldBattery: { $gte: minPrice, $lte: maxPrice } });
+          priceOr.push({ priceWithOldBattery: { $gte: minPrice, $lte: maxPrice } });
         }
-        console.log('[products] priceRange', { minPrice, maxPrice, forType: mode || 'all' });
+        requiredClauses.push({ $or: priceOr });
       }
 
-      if (req.query.capacityRange) {
-        try {
-          const [minStr, maxStr] = req.query.capacityRange.split('-');
-          const minValue = Number(minStr);
-          const maxValue = Number(maxStr);
-          if (mode === 'battery') {
-            if (maxValue === 999) requiredClauses.push({ AH: { $gt: minValue } });
-            else requiredClauses.push({ AH: { $gte: minValue, $lte: maxValue } });
-          } else if (mode === 'inverter') {
-            if (maxValue === 999999) requiredClauses.push({ capacity: { $gt: minValue } });
-            else requiredClauses.push({ capacity: { $gte: minValue, $lte: maxValue } });
-          }
-          console.log('[products] capacityRange', { minValue, maxValue, forType: mode || 'all' });
-        } catch {
-          console.log('[products] capacityRange parseError', req.query.capacityRange);
+      if (mode === 'inverter') {
+        if (capacityFilter.min != null && capacityFilter.max != null) {
+          requiredClauses.push({ capacity: { $gte: capacityFilter.min, $lte: capacityFilter.max } });
+        } else if (capacityFilter.min != null) {
+          requiredClauses.push({ capacity: { $gte: capacityFilter.min } });
         }
       }
 
-      console.log('[products] requiredClauses', JSON.stringify(requiredClauses, null, 2));
-      console.log('[products] optionalFitmentClauses', JSON.stringify(optionalFitmentClauses, null, 2));
       return { requiredClauses, optionalFitmentClauses };
     };
 
@@ -133,7 +134,10 @@ exports.getProducts = async (req, res) => {
     };
 
     if (effectiveType === 'battery') {
+      console.log('[products] Using BATTERY branch');
       const { requiredClauses, optionalFitmentClauses } = buildFiltersFor('battery');
+      console.log('[products] battery.requiredClauses:', JSON.stringify(requiredClauses, null, 2));
+      console.log('[products] battery.optionalFitmentClauses:', JSON.stringify(optionalFitmentClauses, null, 2));
 
       const strictQuery = {};
       if (requiredClauses.length) strictQuery.$and = [...requiredClauses];
@@ -148,8 +152,6 @@ exports.getProducts = async (req, res) => {
         strictQuery.$and = strictQuery.$and || [];
         strictQuery.$and.push({ $or: textSearchClause.$or });
       }
-
-      console.log('[products] batteryQuery.strict', JSON.stringify(strictQuery, null, 2));
 
       let total = await Battery.countDocuments(strictQuery);
       let docs = await Battery.find(strictQuery)
@@ -166,7 +168,6 @@ exports.getProducts = async (req, res) => {
           relaxedQuery.$and = relaxedQuery.$and || [];
           relaxedQuery.$and.push({ $or: textSearchClause.$or });
         }
-        console.log('[products] batteryQuery.relaxed', JSON.stringify(relaxedQuery, null, 2));
         total = await Battery.countDocuments(relaxedQuery);
         docs = await Battery.find(relaxedQuery)
           .populate('brand category')
@@ -180,36 +181,6 @@ exports.getProducts = async (req, res) => {
       }
 
       docs = await appendReviewStats(docs);
-      console.log('[products] result', { totalCount: total, pageCount: docs.length });
-
-      if (debugMode) {
-        const brandId = req.query.brand && mongoose.Types.ObjectId.isValid(req.query.brand) ? new mongoose.Types.ObjectId(req.query.brand) : null;
-        const lineId = req.query.productLine && mongoose.Types.ObjectId.isValid(req.query.productLine) ? new mongoose.Types.ObjectId(req.query.productLine) : null;
-        const manuId = req.query.manufacturer && mongoose.Types.ObjectId.isValid(req.query.manufacturer) ? new mongoose.Types.ObjectId(req.query.manufacturer) : null;
-        const modelId = req.query.vehicleModel && mongoose.Types.ObjectId.isValid(req.query.vehicleModel) ? new mongoose.Types.ObjectId(req.query.vehicleModel) : null;
-        const minPrice = Number(req.query.minPrice || 0);
-        const maxPrice = Number(req.query.maxPrice || Infinity);
-
-        const stepCounts = [];
-        stepCounts.push({ step: 'allBatteries', count: await Battery.countDocuments({}) });
-        if (brandId) stepCounts.push({ step: 'brand', count: await Battery.countDocuments({ brand: brandId }) });
-        if (lineId) stepCounts.push({ step: 'productLine', count: await Battery.countDocuments({ productLine: lineId }) });
-        if (manuId) stepCounts.push({ step: 'manufacturerOrCompatible', count: await Battery.countDocuments({ $or: [{ manufacturer: manuId }, { compatibleManufacturers: manuId }] }) });
-        if (modelId) stepCounts.push({ step: 'vehicleModelOrCompatible', count: await Battery.countDocuments({ $or: [{ vehicleModel: modelId }, { compatibleModels: modelId }] }) });
-        stepCounts.push({
-          step: 'priceAnyField',
-          count: await Battery.countDocuments({
-            $or: [
-              { price: { $gte: minPrice, $lte: maxPrice } },
-              { mrp: { $gte: minPrice, $lte: maxPrice } },
-              { sellingPrice: { $gte: minPrice, $lte: maxPrice } },
-              { priceWithoutOldBattery: { $gte: minPrice, $lte: maxPrice } },
-              { priceWithOldBattery: { $gte: minPrice, $lte: maxPrice } }
-            ]
-          })
-        });
-        console.log('[products][debug] stepCounts', JSON.stringify(stepCounts, null, 2));
-      }
 
       return res.status(200).json({
         success: true,
@@ -218,49 +189,61 @@ exports.getProducts = async (req, res) => {
         pagination: { page: pageNumber, limit: pageSize, totalPages: Math.ceil(total / pageSize) || 1 },
         data: docs
       });
+    } else {
+      console.log('[products] Using GENERIC branch (all models)');
+      const genericClauses = buildFiltersFor(undefined).requiredClauses;
+      console.log('[products] generic.requiredClauses:', JSON.stringify(genericClauses, null, 2));
+
+      const baseQueryWithoutCapacity = genericClauses.length ? { $and: genericClauses } : {};
+      if (textSearchClause.$or) {
+        baseQueryWithoutCapacity.$and = baseQueryWithoutCapacity.$and || [];
+        baseQueryWithoutCapacity.$and.push({ $or: textSearchClause.$or });
+      }
+      console.log('[products] generic.baseQuery:', JSON.stringify(baseQueryWithoutCapacity, null, 2));
+
+      const modelMatrix = [
+        { model: UPS, type: 'ups', capacityField: 'outputPowerWattage' },
+        { model: SolarPCU, type: 'solar-pcu', capacityField: 'wattage' },
+        { model: SolarPV, type: 'solar-pv', capacityField: null },
+        { model: SolarStreetLight, type: 'solar-street-light', capacityField: 'power' },
+        { model: Inverter, type: 'inverter', capacityField: 'capacity' },
+        { model: Battery, type: 'battery', capacityField: null }
+      ];
+
+      const allDocs = [];
+      for (const { model, type, capacityField } of modelMatrix) {
+        let modelQuery = JSON.parse(JSON.stringify(baseQueryWithoutCapacity));
+        if (capacityField && capacityFilter.min != null) {
+          const capacityClause = capacityFilter.max != null
+            ? { [capacityField]: { $gte: capacityFilter.min, $lte: capacityFilter.max } }
+            : { [capacityField]: { $gte: capacityFilter.min } };
+          modelQuery.$and = modelQuery.$and || [];
+          modelQuery.$and.push(capacityClause);
+        }
+        console.log(`[products] model=${type}, modelQuery=`, JSON.stringify(modelQuery, null, 2));
+        const docs = await model.find(modelQuery).populate('brand category').lean();
+        console.log(`[products] model=${type}, found=`, docs.length);
+        allDocs.push(...docs.map(p => ({ ...p, prodType: type })));
+      }
+
+      const total = allDocs.length;
+      const pageDocs = allDocs.slice(offset, offset + pageSize);
+      const enriched = await appendReviewStats(pageDocs);
+
+      return res.status(200).json({
+        success: true,
+        count: enriched.length,
+        total,
+        pagination: { page: pageNumber, limit: pageSize, totalPages: Math.ceil(total / pageSize) || 1 },
+        data: enriched
+      });
     }
 
-    const genericClauses = buildFiltersFor(undefined).requiredClauses;
-    const baseQuery = genericClauses.length ? { $and: genericClauses } : {};
-    if (textSearchClause.$or) {
-      baseQuery.$and = baseQuery.$and || [];
-      baseQuery.$and.push({ $or: textSearchClause.$or });
-    }
-    console.log('[products] allTypesQuery', JSON.stringify(baseQuery, null, 2));
-
-    const modelMatrix = [
-      { model: UPS, type: 'ups' },
-      { model: SolarPCU, type: 'solar-pcu' },
-      { model: SolarPV, type: 'solar-pv' },
-      { model: SolarStreetLight, type: 'solar-street-light' },
-      { model: Inverter, type: 'inverter' },
-      { model: Battery, type: 'battery' }
-    ];
-
-    const allDocs = [];
-    for (const { model, type } of modelMatrix) {
-      const docs = await model.find(baseQuery).populate('brand category').lean();
-      console.log('[products] modelScan', type, 'count', docs.length);
-      allDocs.push(...docs.map(p => ({ ...p, prodType: type })));
-    }
-
-    const total = allDocs.length;
-    const pageDocs = allDocs.slice(offset, offset + pageSize);
-    const enriched = await appendReviewStats(pageDocs);
-    console.log('[products] result', { totalCount: total, pageCount: enriched.length });
-
-    return res.status(200).json({
-      success: true,
-      count: enriched.length,
-      total,
-      pagination: { page: pageNumber, limit: pageSize, totalPages: Math.ceil(total / pageSize) || 1 },
-      data: enriched
-    });
   } catch (err) {
-    console.log('[products] error', err);
     return res.status(500).json({ success: false, message: err.message || 'Server Error' });
   }
 };
+
 
 
 

@@ -60,6 +60,7 @@ exports.getAllSolarStreetLights = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarStreetLights = await SolarStreetLight.find(query)
       .populate('category', 'name')
+      .populate('brand', 'name')
       .populate('productLine', 'name') // <-- added
       .sort(sortOption)
       .skip(startIndex)

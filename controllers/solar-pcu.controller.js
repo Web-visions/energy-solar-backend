@@ -73,6 +73,7 @@ exports.getAllSolarPCUs = async (req, res) => {
     const solarPCUs = await SolarPCU.find(query)
       .populate('category', 'name')
       .populate('productLine', 'name')
+      .populate('brand', 'name')
       .sort(sortOption)
       .skip(startIndex)
       .limit(limit);

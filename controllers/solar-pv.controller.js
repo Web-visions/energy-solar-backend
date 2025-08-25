@@ -68,6 +68,7 @@ exports.getAllSolarPVModules = async (req, res) => {
     // Query with pagination, filtering, and sorting
     const solarPVModules = await SolarPVModule.find(query)
       .populate('category', 'name')
+      .populate('brand', 'name')
       .populate('productLine', 'name') // <-- added
       .sort(sortOption)
       .skip(startIndex)
