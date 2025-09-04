@@ -207,6 +207,41 @@ exports.updateUser = async (req, res) => {
   }
 };
 
+exports.updateOwnProfile = async (req, res) => {
+  try {
+    const { name, email, phone, address } = req.body;
+    const userId = req.user._id; // from JWT payload
+
+    const existingUser = await User.findById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // prevent role updates by normal users
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (email && email !== existingUser.email) {
+      const duplicateEmail = await User.findOne({ email });
+      if (duplicateEmail) {
+        return res.status(400).json({ success: false, message: `User with email ${email} already exists` });
+      }
+      updateFields.email = email;
+    }
+    if (phone !== undefined) updateFields.phone = phone;
+    if (address !== undefined) updateFields.address = address;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+      new: true,
+      runValidators: true,
+    }).select('-password -otp');
+
+    return res.status(200).json({ success: true, data: updatedUser });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message || 'Server Error' });
+  }
+};
+
 // @desc    Toggle user status (activate/deactivate)
 // @route   PUT /api/users/:id/status
 // @access  Private/Admin

@@ -103,102 +103,106 @@ exports.getCart = async (req, res) => {
 };
 
 // Add item to cart
+// Add item to cart
 exports.addToCart = async (req, res) => {
-    try {
-        const { productType, productId, quantity, withOldBattery } = req.body;
+  try {
+    const { productType, productId } = req.body;
+    const requestedQuantity = Number(req.body.quantity ?? 1);
+    const applyOldBattery = Boolean(req.body.withOldBattery);
 
-        // Validate product exists
-        let product;
-        switch (productType) {
-            case 'ups':
-                product = await UPS.findById(productId);
-                break;
-            case 'solar-pcu':
-                product = await SolarPCU.findById(productId);
-                break;
-            case 'solar-pv':
-                product = await SolarPV.findById(productId);
-                break;
-            case 'solar-street-light':
-                product = await SolarStreetLight.findById(productId);
-                break;
-            case 'inverter':
-                product = await Inverter.findById(productId);
-                break;
-            case 'battery':
-                product = await Battery.findById(productId);
-                break;
-            default:
-                return res.status(400).json({ message: 'Invalid product type' });
-        }
-
-        if (!product) {
-            return res.status(404).json({ message: 'Product not found' });
-        }
-
-        // Get or create cart
-        let cart = await Cart.findOne({ user: req.user._id });
-        if (!cart) {
-            cart = new Cart({ user: req.user._id, items: [] });
-        }
-
-        // Check if item already exists
-        const existingItem = cart.items.find(
-            item => item.productType === productType && item.productId.toString() === productId
-        );
-
-        if (existingItem) {
-            existingItem.quantity += quantity;
-            existingItem.withOldBattery = withOldBattery || existingItem.withOldBattery;
-        } else {
-            cart.items.push({ productType, productId, quantity, withOldBattery });
-        }
-
-        // Calculate total amount
-        cart.totalAmount = await calculateTotalAmount(cart.items);
-
-        await cart.save();
-
-        // Populate detailed product information before sending response
-        const populatedCart = await populateCartDetails(cart);
-
-        res.json(populatedCart);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) {
+      return res.status(400).json({ message: 'Quantity must be a positive number' });
     }
+
+    // Validate product exists
+    let product;
+    switch (productType) {
+      case 'ups': product = await UPS.findById(productId); break;
+      case 'solar-pcu': product = await SolarPCU.findById(productId); break;
+      case 'solar-pv': product = await SolarPV.findById(productId); break;
+      case 'solar-street-light': product = await SolarStreetLight.findById(productId); break;
+      case 'inverter': product = await Inverter.findById(productId); break;
+      case 'battery': product = await Battery.findById(productId); break;
+      default: return res.status(400).json({ message: 'Invalid product type' });
+    }
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    // Get or create cart
+    let cart = await Cart.findOne({ user: req.user._id });
+    if (!cart) cart = new Cart({ user: req.user._id, items: [], totalAmount: 0 });
+
+    // Check if item already exists
+    const existingItem = cart.items.find(
+      (cartItem) =>
+        cartItem.productType === productType &&
+        String(cartItem.productId) === String(productId)
+    );
+
+    if (existingItem) {
+      const currentQty = Number(existingItem.quantity ?? 0);
+      existingItem.quantity = currentQty + requestedQuantity;
+      // Only update flag if explicitly provided
+      if (req.body.withOldBattery !== undefined) {
+        existingItem.withOldBattery = applyOldBattery;
+      }
+    } else {
+      cart.items.push({
+        productType,
+        productId,
+        quantity: requestedQuantity,
+        withOldBattery: applyOldBattery,
+      });
+    }
+
+    cart.totalAmount = await calculateTotalAmount(cart.items); // uses the fixed helper below
+    if (!Number.isFinite(cart.totalAmount)) {
+      return res.status(400).json({ message: 'Computed total is invalid' });
+    }
+
+    await cart.save();
+
+    const populatedCart = await populateCartDetails(cart);
+    return res.json(populatedCart);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
 
-// Update cart item quantity
 exports.updateCartItem = async (req, res) => {
-    try {
-        const { productType, productId } = req.params;
-        const { quantity } = req.body;
+  try {
+    const { productType, productId } = req.params;
+    const newQuantity = Number(req.body.quantity);
 
-        const cart = await Cart.findOne({ user: req.user._id });
-        if (!cart) {
-            return res.status(404).json({ message: 'Cart not found' });
-        }
-
-        const item = cart.items.find(
-            item => item.productType === productType && item.productId.toString() === productId
-        );
-
-        if (!item) {
-            return res.status(404).json({ message: 'Item not found in cart' });
-        }
-
-        item.quantity = quantity;
-        cart.totalAmount = await calculateTotalAmount(cart.items);
-        await cart.save();
-
-        // Populate detailed product information before sending response
-        const populatedCart = await populateCartDetails(cart);
-
-        res.json(populatedCart);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (!Number.isFinite(newQuantity) || newQuantity <= 0) {
+      return res.status(400).json({ message: 'Quantity must be a positive number' });
     }
+
+    const cart = await Cart.findOne({ user: req.user._id });
+    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+
+    const item = cart.items.find(
+      (cartItem) =>
+        cartItem.productType === productType &&
+        String(cartItem.productId) === String(productId)
+    );
+    if (!item) return res.status(404).json({ message: 'Item not found in cart' });
+
+    item.quantity = newQuantity;
+
+    cart.totalAmount = await calculateTotalAmount(cart.items);
+    if (!Number.isFinite(cart.totalAmount)) {
+      return res.status(400).json({ message: 'Computed total is invalid' });
+    }
+
+    await cart.save();
+    const populatedCart = await populateCartDetails(cart);
+    return res.json(populatedCart);
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
 };
+
+
 
 // Remove item from cart
 exports.removeFromCart = async (req, res) => {
@@ -228,42 +232,62 @@ exports.removeFromCart = async (req, res) => {
 
 // Helper function to calculate total amount
 async function calculateTotalAmount(items) {
-    let total = 0;
-    for (const item of items) {
-        let product;
-        switch (item.productType) {
-            case 'ups':
-                product = await UPS.findById(item.productId);
-                break;
-            case 'solar-pcu':
-                product = await SolarPCU.findById(item.productId);
-                break;
-            case 'solar-pv':
-                product = await SolarPV.findById(item.productId);
-                break;
-            case 'solar-street-light':
-                product = await SolarStreetLight.findById(item.productId);
-                break;
-            case 'inverter':
-                product = await Inverter.findById(item.productId);
-                break;
-            case 'battery':
-                product = await Battery.findById(item.productId);
-                break;
-        }
-        if (product) {
-            let price = 0;
+  let cartTotal = 0;
 
-            if (item.productType === 'battery' || item.productType === 'inverter') {
-                price = item.withOldBattery ? product.priceWithOldBattery : product.priceWithoutOldBattery;
-            } else if (item.productType.startsWith('solar-')) {
-                price = product.price || 0;
-            } else {
-                price = product.sellingPrice || product.mrp || 0;
-            }
+  for (const cartItem of items) {
+    const { productType, productId, withOldBattery } = cartItem;
+    const itemQuantity = Number(cartItem.quantity);
 
-            total += price * item.quantity;
-        }
+    if (!Number.isFinite(itemQuantity) || itemQuantity <= 0) {
+      throw new Error(`Invalid quantity for product ${productId}`);
     }
-    return total;
-} 
+
+    let productDoc;
+    switch (productType) {
+      case 'ups': productDoc = await UPS.findById(productId); break;
+      case 'solar-pcu': productDoc = await SolarPCU.findById(productId); break;
+      case 'solar-pv': productDoc = await SolarPV.findById(productId); break;
+      case 'solar-street-light': productDoc = await SolarStreetLight.findById(productId); break;
+      case 'inverter': productDoc = await Inverter.findById(productId); break;
+      case 'battery': productDoc = await Battery.findById(productId); break;
+      default: throw new Error(`Unknown product type "${productType}"`);
+    }
+    if (!productDoc) throw new Error(`Product not found: ${productType}:${productId}`);
+
+    let unitPrice;
+
+    if (productType === 'battery') {
+      // Batteries support trade-in by design
+      const priceWith = Number(productDoc.priceWithOldBattery);
+      const priceWithout = Number(productDoc.priceWithoutOldBattery);
+      unitPrice = withOldBattery ? priceWith : priceWithout;
+    } else if (productType === 'inverter') {
+      // Most inverter schemas DO NOT have old-battery pricing; use selling/mrp/price
+      const sellingPrice = Number(productDoc.sellingPrice);
+      const mrp = Number(productDoc.mrp);
+      const basePrice = Number(productDoc.price);
+      unitPrice = [sellingPrice, mrp, basePrice].find(Number.isFinite);
+    } else if (productType.startsWith('solar-')) {
+      unitPrice = Number(productDoc.price);
+    } else {
+      // ups or other
+      const sellingPrice = Number(productDoc.sellingPrice);
+      const mrp = Number(productDoc.mrp);
+      const basePrice = Number(productDoc.price);
+      unitPrice = [sellingPrice, mrp, basePrice].find(Number.isFinite);
+    }
+
+    if (!Number.isFinite(unitPrice)) {
+      throw new Error(
+        `Price missing/invalid for ${productType}:${productId} (withOldBattery=${withOldBattery})`
+      );
+    }
+
+    cartTotal += unitPrice * itemQuantity;
+  }
+
+  if (!Number.isFinite(cartTotal)) {
+    throw new Error('Total computed is not finite');
+  }
+  return cartTotal;
+}

@@ -876,8 +876,12 @@ exports.getProductById = async (req, res) => {
 // Get filter options
 exports.getFilterOptions = async (req, res) => {
   try {
-    const brands = await Brand.find();
-    const categories = await Category.find();
+    const brands = await Brand.find().select({
+      _id : 1, name : 1, 
+    });;
+    const categories = await Category.find().select({
+      _id : 1, name : 1, 
+    });
 
     res.json({
       brands,
@@ -888,101 +892,3 @@ exports.getFilterOptions = async (req, res) => {
   }
 };
 
-// Test brand filtering
-exports.testBrandFilter = async (req, res) => {
-  try {
-    const { brandId, type } = req.query;
-
-    if (!brandId) {
-      return res.status(400).json({ message: "Brand ID is required" });
-    }
-
-    // Convert string ID to ObjectId for proper MongoDB comparison
-    if (!mongoose.Types.ObjectId.isValid(brandId)) {
-      return res.status(400).json({ message: "Invalid brand ID format" });
-    }
-    const brandObjectId = new mongoose.Types.ObjectId(brandId);
-
-    let Model;
-    if (type) {
-      switch (type) {
-        case "ups":
-          Model = UPS;
-          break;
-        case "solar-pcu":
-          Model = SolarPCU;
-          break;
-        case "solar-pv":
-          Model = SolarPV;
-          break;
-        case "solar-street-light":
-          Model = SolarStreetLight;
-          break;
-        case "inverter":
-          Model = Inverter;
-          break;
-        case "battery":
-          Model = Battery;
-          break;
-        default:
-          return res.status(400).json({ message: "Invalid product type" });
-      }
-    } else {
-      // Test all models
-      const results = {};
-      const models = [
-        { name: "UPS", model: UPS },
-        { name: "SolarPCU", model: SolarPCU },
-        { name: "SolarPV", model: SolarPV },
-        { name: "SolarStreetLight", model: SolarStreetLight },
-        { name: "Inverter", model: Inverter },
-        { name: "Battery", model: Battery },
-      ];
-
-      for (const { name, model } of models) {
-        const count = await model.countDocuments({ brand: brandObjectId });
-        const sample = await model
-          .findOne({ brand: brandObjectId })
-          .populate("brand", "name");
-        results[name] = {
-          count,
-          sample: sample
-            ? {
-                id: sample._id,
-                name: sample.name,
-                brand: sample.brand?.name,
-              }
-            : null,
-        };
-      }
-
-      return res.json({
-        brandId,
-        brandObjectId: brandObjectId.toString(),
-        results,
-      });
-    }
-
-    const count = await Model.countDocuments({ brand: brandObjectId });
-    const sample = await Model.findOne({ brand: brandObjectId }).populate(
-      "brand",
-      "name"
-    );
-
-    res.json({
-      brandId,
-      brandObjectId: brandObjectId.toString(),
-      type,
-      count,
-      sample: sample
-        ? {
-            id: sample._id,
-            name: sample.name,
-            brand: sample.brand?.name,
-          }
-        : null,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
