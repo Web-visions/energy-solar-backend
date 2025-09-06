@@ -153,59 +153,46 @@ exports.getProducts = async (req, res) => {
       }));
     };
 
-    if (effectiveType === "battery") {
-      const { requiredClauses, optionalFitmentClauses } = buildFiltersFor("battery");
+  if (effectiveType === "battery") {
+  const { requiredClauses, optionalFitmentClauses } = buildFiltersFor("battery");
 
-      const strictQuery = { $and: [] };
-      if (requiredClauses.length) strictQuery.$and.push(...requiredClauses);
+  const strictQuery = { $and: [] };
+  if (requiredClauses.length) strictQuery.$and.push(...requiredClauses);
 
-      if (optionalFitmentClauses.length === 1) {
-        strictQuery.$and.push(optionalFitmentClauses[0]);
-      } else if (optionalFitmentClauses.length > 1) {
-        strictQuery.$and.push({ $and: optionalFitmentClauses });
-      }
+  if (optionalFitmentClauses.length === 1) {
+    strictQuery.$and.push(optionalFitmentClauses[0]);
+  } else if (optionalFitmentClauses.length > 1) {
+    strictQuery.$and.push({ $and: optionalFitmentClauses });
+  }
 
-      if (textSearchClause.$or) strictQuery.$and.push(textSearchClause);
-      if (strictQuery.$and.length === 0) delete strictQuery.$and;
+  if (textSearchClause.$or) strictQuery.$and.push(textSearchClause);
+  if (strictQuery.$and.length === 0) delete strictQuery.$and;
 
-      let total = await Battery.countDocuments(strictQuery);
+  let finalQuery = strictQuery;
+  let total = await Battery.countDocuments(finalQuery);
 
-      let finalQuery = strictQuery;
-      if (total === 0 && optionalFitmentClauses.length > 0 && !strictFitment) {
-        const relaxedQuery = { $and: [] };
-        if (requiredClauses.length) relaxedQuery.$and.push(...requiredClauses);
-        if (textSearchClause.$or) relaxedQuery.$and.push(textSearchClause);
-        if (relaxedQuery.$and.length === 0) delete relaxedQuery.$and;
+  let batteryDocs = await Battery.find(finalQuery)
+    .populate("brand category")
+    .skip(offset)
+    .limit(pageSize)
+    .lean();
 
-        const relaxedTotal = await Battery.countDocuments(relaxedQuery);
+  batteryDocs = batteryDocs.map((d) => ({ ...d, prodType: "battery" }));
+  const enrichedBatteryDocs = await appendReviewStats(batteryDocs);
 
-        if (relaxedTotal > 0) {
-          finalQuery = relaxedQuery;
-          total = relaxedTotal;
-        }
-      }
+  return res.json({
+    success: true,
+    count: enrichedBatteryDocs.length,
+    total,
+    pagination: {
+      page: pageNumber,
+      limit: pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    },
+    data: enrichedBatteryDocs,
+  });
+}
 
-      let batteryDocs = await Battery.find(finalQuery)
-        .populate("brand category")
-        .skip(offset)
-        .limit(pageSize)
-        .lean();
-
-      batteryDocs = batteryDocs.map((d) => ({ ...d, prodType: "battery" }));
-      const enrichedBatteryDocs = await appendReviewStats(batteryDocs);
-
-      return res.json({
-        success: true,
-        count: enrichedBatteryDocs.length,
-        total,
-        pagination: {
-          page: pageNumber,
-          limit: pageSize,
-          totalPages: Math.ceil(total / pageSize) || 1,
-        },
-        data: enrichedBatteryDocs,
-      });
-    }
 
     const { requiredClauses: genericRequiredClauses } = buildFiltersFor(null);
 
