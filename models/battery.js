@@ -8,16 +8,16 @@ const batterySchema = new mongoose.Schema({
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'Brand', required: true },
 
   // VEHICLE/MANUFACTURER FIELDS (Non-mandatory)
-  manufacturer: {
+  manufacturer: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Manufacturer',
     required: false // Optional - not all batteries are vehicle-specific
-  },
-  vehicleModel: {
+  }],
+  vehicleModel: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'VehicleModel',
     required: false // Optional - not all batteries are model-specific
-  },
+  }],
   compatibleManufacturers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Manufacturer'
@@ -43,8 +43,9 @@ const batterySchema = new mongoose.Schema({
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Review' }]
 }, { timestamps: true });
 
-// Indexes for better performance on vehicle-related queries
-batterySchema.index({ manufacturer: 1, vehicleModel: 1 });
+// Remove compound multikey index; add single-field indexes
+batterySchema.index({ manufacturer: 1 });
+batterySchema.index({ vehicleModel: 1 });
 batterySchema.index({ compatibleManufacturers: 1 });
 batterySchema.index({ compatibleModels: 1 });
 

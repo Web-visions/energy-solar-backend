@@ -1,6 +1,30 @@
 const Battery = require('../models/battery');
 const fileUpload = require('../utils/fileUpload');
 
+
+ // Helper to parse a field into an array (accepts JSON string, comma-separated string, array, or single id)
+    function parseToArray(value) {
+      if (value === undefined || value === null) return [];
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed === '') return [];
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) return parsed;
+          return [parsed];
+        } catch (err) {
+          // fallback: comma-separated or single value
+          if (trimmed.includes(',')) {
+            return trimmed.split(',').map(item => item.trim()).filter(Boolean);
+          }
+          return [trimmed];
+        }
+      }
+      return [value];
+    }
+
+
 // @desc    Get all Batteries with pagination, search, and filtering
 // @route   GET /api/batteries
 // @access  Public
@@ -143,7 +167,7 @@ exports.createBattery = async (req, res) => {
       priceWithoutOldBattery,
       priceWithOldBattery,
       isFeatured,
-      // NEW VEHICLE/MANUFACTURER FIELDS
+      // NEW VEHICLE/MANUFACTURER FIELDS (now support multiple)
       manufacturer,
       vehicleModel,
       compatibleManufacturers,
@@ -198,6 +222,14 @@ exports.createBattery = async (req, res) => {
         featuresArray = features;
       }
     }
+
+   
+
+    // Parse manufacturer (now supports multiple)
+    const manufacturerArray = parseToArray(manufacturer);
+
+    // Parse vehicleModel (now supports multiple)
+    const vehicleModelArray = parseToArray(vehicleModel);
 
     // Handle compatibleManufacturers array
     let compatibleManufacturersArray = [];
@@ -261,9 +293,9 @@ exports.createBattery = async (req, res) => {
       priceWithOldBattery: priceWithOldBattery ? Number(priceWithOldBattery) : undefined,
       image: imagePath,
       isFeatured: typeof isFeatured === 'string' ? isFeatured === 'true' : !!isFeatured,
-      // NEW VEHICLE/MANUFACTURER FIELDS
-      manufacturer: manufacturer || undefined,
-      vehicleModel: vehicleModel || undefined,
+      // NEW VEHICLE/MANUFACTURER FIELDS (arrays)
+      manufacturer: manufacturerArray.length ? manufacturerArray : undefined,
+      vehicleModel: vehicleModelArray.length ? vehicleModelArray : undefined,
       compatibleManufacturers: compatibleManufacturersArray,
       compatibleModels: compatibleModelsArray
     });
@@ -275,11 +307,16 @@ exports.createBattery = async (req, res) => {
   }
 };
 
+
+// @desc    Update Battery
+// @route   PUT /api/batteries/:id
+// @access  Private/Admin
 // @desc    Update Battery
 // @route   PUT /api/batteries/:id
 // @access  Private/Admin
 exports.updateBattery = async (req, res) => {
   try {
+
     let battery = await Battery.findById(req.params.id);
     if (!battery) {
       return res.status(404).json({ success: false, message: 'Battery not found' });
@@ -313,16 +350,40 @@ exports.updateBattery = async (req, res) => {
     }
 
     // Features field handling
-    if (req.body.features) {
-      if (typeof req.body.features === 'string') {
+    if (req.body.features !== undefined) {
+      if (req.body.features === '' || req.body.features === null) {
+        req.body.features = [];
+      } else if (typeof req.body.features === 'string') {
         try {
           req.body.features = JSON.parse(req.body.features);
+          if (!Array.isArray(req.body.features)) {
+            req.body.features = [req.body.features];
+          }
         } catch (error) {
           return res.status(400).json({
             success: false,
             message: 'Invalid features format. Must be a valid JSON array.'
           });
         }
+      }
+      // if it's already an array, leave it
+    }
+
+    // Handle manufacturer -> allow multiple (JSON string, comma-separated, array, single id)
+    if (req.body.manufacturer !== undefined) {
+      if (req.body.manufacturer === '' || req.body.manufacturer === null) {
+        req.body.manufacturer = [];
+      } else {
+        req.body.manufacturer = parseToArray(req.body.manufacturer);
+      }
+    }
+
+    // Handle vehicleModel -> allow multiple (JSON string, comma-separated, array, single id)
+    if (req.body.vehicleModel !== undefined) {
+      if (req.body.vehicleModel === '' || req.body.vehicleModel === null) {
+        req.body.vehicleModel = [];
+      } else {
+        req.body.vehicleModel = parseToArray(req.body.vehicleModel);
       }
     }
 
@@ -332,7 +393,8 @@ exports.updateBattery = async (req, res) => {
         req.body.compatibleManufacturers = [];
       } else if (typeof req.body.compatibleManufacturers === 'string') {
         try {
-          req.body.compatibleManufacturers = JSON.parse(req.body.compatibleManufacturers);
+          const parsed = JSON.parse(req.body.compatibleManufacturers);
+          req.body.compatibleManufacturers = Array.isArray(parsed) ? parsed : [parsed];
         } catch (error) {
           // If it's a single string ID, convert to array
           req.body.compatibleManufacturers = [req.body.compatibleManufacturers];
@@ -348,7 +410,8 @@ exports.updateBattery = async (req, res) => {
         req.body.compatibleModels = [];
       } else if (typeof req.body.compatibleModels === 'string') {
         try {
-          req.body.compatibleModels = JSON.parse(req.body.compatibleModels);
+          const parsed = JSON.parse(req.body.compatibleModels);
+          req.body.compatibleModels = Array.isArray(parsed) ? parsed : [parsed];
         } catch (error) {
           // If it's a single string ID, convert to array
           req.body.compatibleModels = [req.body.compatibleModels];
@@ -359,17 +422,23 @@ exports.updateBattery = async (req, res) => {
     }
 
     // Convert numeric fields
-    if (req.body.AH) req.body.AH = Number(req.body.AH);
-    if (req.body.mrp) req.body.mrp = Number(req.body.mrp);
-    if (req.body.priceWithoutOldBattery && req.body.priceWithoutOldBattery !== '') {
-      req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
-    } else {
-      req.body.priceWithoutOldBattery = null;
+    if (req.body.AH !== undefined && req.body.AH !== '') req.body.AH = Number(req.body.AH);
+    if (req.body.mrp !== undefined && req.body.mrp !== '') req.body.mrp = Number(req.body.mrp);
+
+    if (req.body.priceWithoutOldBattery !== undefined) {
+      if (req.body.priceWithoutOldBattery !== '' && req.body.priceWithoutOldBattery !== null) {
+        req.body.priceWithoutOldBattery = Number(req.body.priceWithoutOldBattery);
+      } else {
+        req.body.priceWithoutOldBattery = null;
+      }
     }
-    if (req.body.priceWithOldBattery && req.body.priceWithOldBattery !== '') {
-      req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
-    } else {
-      req.body.priceWithOldBattery = null;
+
+    if (req.body.priceWithOldBattery !== undefined) {
+      if (req.body.priceWithOldBattery !== '' && req.body.priceWithOldBattery !== null) {
+        req.body.priceWithOldBattery = Number(req.body.priceWithOldBattery);
+      } else {
+        req.body.priceWithOldBattery = null;
+      }
     }
 
     // Handle boolean conversion for isFeatured
@@ -379,8 +448,6 @@ exports.updateBattery = async (req, res) => {
 
     // Handle empty string to undefined conversion for optional ObjectId fields
     if (req.body.productLine === '') req.body.productLine = undefined;
-    if (req.body.manufacturer === '') req.body.manufacturer = undefined;
-    if (req.body.vehicleModel === '') req.body.vehicleModel = undefined;
 
     // Use findByIdAndUpdate with options
     battery = await Battery.findByIdAndUpdate(
@@ -407,6 +474,7 @@ exports.updateBattery = async (req, res) => {
     res.status(500).json({ success: false, message: error.message || 'Server Error' });
   }
 };
+
 
 
 
