@@ -308,25 +308,10 @@ const modelResults = await Promise.all(
       }
     }
 
-    console.log(`=== ${prodType.toUpperCase()} QUERY ===`, JSON.stringify(modelQuery, null, 2));
 
     const documents = await model.find(modelQuery).populate("brand category productLine").lean();
     
-    console.log(`=== ${prodType.toUpperCase()} FOUND ===`, documents.length);
-    if (prodType === "inverter") {
-  const totalInverters = await model.countDocuments({});
-  console.log("=== TOTAL INVERTERS IN DB ===", totalInverters);
-  
-  const invertersWithProductLine = await model.countDocuments({ 
-    productLine: { $exists: true, $ne: null } 
-  });
-  console.log("=== INVERTERS WITH PRODUCT LINE ===", invertersWithProductLine);
-  
-  const invertersMatchingProductLine = await model.countDocuments({ 
-    productLine: toObjectId(req.query.productLine) 
-  });
-  console.log("=== INVERTERS MATCHING PRODUCT LINE ID ===", invertersMatchingProductLine);
-}
+
     
     return documents.map((doc) => ({ ...doc, prodType }));
   })
