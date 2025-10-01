@@ -22,12 +22,56 @@ exports.getProducts = async (req, res) => {
 
     const searchText = req.query.search || "";
     const normalizedType = (req.query.type || "").toLowerCase();
+    const productLineName = req.query.productLineName || ""; // ✅ Get productLineName
     const strictFitment = String(req.query.strictFitment || "").toLowerCase() === "true";
 
     const hasManufacturerSignal = Boolean(req.query.manufacturer);
     const hasVehicleModelSignal = Boolean(req.query.vehicleModel);
     const hasFitmentSignals = hasManufacturerSignal || hasVehicleModelSignal;
-    const effectiveType = normalizedType === "battery" || hasFitmentSignals ? "battery" : null;
+
+    // ✅ Determine effective type from productLineName
+    const BATTERY_PRODUCT_LINES = [
+      "2 Wheeler Batteries",
+      "Four Wheeler Batteries", 
+      "Truck Batteries",
+      "Genset Batteries",
+      "Inverter Batteries",
+      "SMF/VRLA Batteries",
+      "Solar Batteries"
+    ];
+
+    const INVERTER_PRODUCT_LINES = [
+      "Inverter",
+      "Inverter & Battery Combo",
+      "Solar Inverters"
+    ];
+
+    const UPS_PRODUCT_LINES = [
+      "Online UPS",
+      "Inverter & UPS System"
+    ];
+
+    const SOLAR_PCU_PRODUCT_LINES = [
+      "Solar Energy Solutions"
+    ];
+
+    let effectiveType = normalizedType;
+
+    // If productLineName is provided, override effectiveType
+    if (productLineName) {
+      if (BATTERY_PRODUCT_LINES.includes(productLineName)) {
+        effectiveType = "battery";
+      } else if (INVERTER_PRODUCT_LINES.includes(productLineName)) {
+        effectiveType = "inverter";
+      } else if (UPS_PRODUCT_LINES.includes(productLineName)) {
+        effectiveType = "ups";
+      } else if (SOLAR_PCU_PRODUCT_LINES.includes(productLineName)) {
+        effectiveType = "solar-pcu";
+      }
+    } else if (hasFitmentSignals) {
+      // Fallback: if manufacturer/vehicleModel present, assume battery
+      effectiveType = "battery";
+    }
 
     const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
     const toObjectId = (value) => new mongoose.Types.ObjectId(value);
@@ -178,6 +222,7 @@ exports.getProducts = async (req, res) => {
       }));
     };
 
+    // ✅ Battery search
     if (effectiveType === "battery") {
       const { requiredClauses, optionalFitmentClauses } = buildFiltersFor("battery");
 
@@ -197,27 +242,28 @@ exports.getProducts = async (req, res) => {
       const total = await Battery.countDocuments(finalQuery);
 
       let batteryDocs = await Battery.find(finalQuery)
-        .populate("brand category")
+        .populate("brand category productLine")
         .skip(offset)
         .limit(pageSize)
         .lean();
 
       batteryDocs = batteryDocs.map((d) => ({ ...d, prodType: "battery" }));
-      const enrichedBatteryDocs = await appendReviewStats(batteryDocs);
+      const data = await appendReviewStats(batteryDocs);
 
       return res.json({
         success: true,
-        count: enrichedBatteryDocs.length,
+        count: data.length,
         total,
         pagination: {
           page: pageNumber,
           limit: pageSize,
           totalPages: Math.ceil(total / pageSize) || 1,
         },
-        data: enrichedBatteryDocs,
+         data,
       });
     }
 
+    // ✅ Non-battery products (Inverter, UPS, Solar, etc.)
     const { requiredClauses: genericRequiredClauses } = buildFiltersFor(null);
 
     const genericBaseQuery = genericRequiredClauses.length ? { $and: [...genericRequiredClauses] } : {};
@@ -234,46 +280,75 @@ exports.getProducts = async (req, res) => {
       { model: SolarStreetLight, prodType: "solar-street-light", capacityField: "power" },
     ];
 
+    // ✅ Filter by effectiveType
     const genericModelMatrix =
-      ["ups", "inverter", "solar-pcu", "solar-pv", "solar-street-light"].includes(normalizedType)
-        ? fullGenericModelMatrix.filter((m) => m.prodType === normalizedType)
+      ["ups", "inverter", "solar-pcu", "solar-pv", "solar-street-light"].includes(effectiveType)
+        ? fullGenericModelMatrix.filter((m) => m.prodType === effectiveType)
         : fullGenericModelMatrix;
 
-    const modelResults = await Promise.all(
-      genericModelMatrix.map(async ({ model, prodType, capacityField }) => {
-        const modelQuery = genericBaseQuery.$and ? { $and: [...genericBaseQuery.$and] } : {};
+   // Around line 270 - Replace the modelResults section
+const modelResults = await Promise.all(
+  genericModelMatrix.map(async ({ model, prodType, capacityField }) => {
+    const modelQuery = genericBaseQuery.$and ? { $and: [...genericBaseQuery.$and] } : {};
 
-        if (capacityField && capacityRange.min != null) {
-          const capacityClause =
-            capacityRange.max != null
-              ? { [capacityField]: { $gte: capacityRange.min, $lte: capacityRange.max } }
-              : { [capacityField]: { $gte: capacityRange.min } };
+    // ✅ Use capacityRange to filter by capacity field (handles both AH and VA)
+    if (capacityField && hasCapacityRange) {
+      if (capacityRange.min != null && capacityRange.max != null) {
+        const capacityClause = { [capacityField]: { $gte: capacityRange.min, $lte: capacityRange.max } };
+        modelQuery.$and = modelQuery.$and || [];
+        modelQuery.$and.push(capacityClause);
+      } else if (capacityRange.min != null) {
+        const capacityClause = { [capacityField]: { $gte: capacityRange.min } };
+        modelQuery.$and = modelQuery.$and || [];
+        modelQuery.$and.push(capacityClause);
+      } else if (capacityRange.max != null) {
+        const capacityClause = { [capacityField]: { $lte: capacityRange.max } };
+        modelQuery.$and = modelQuery.$and || [];
+        modelQuery.$and.push(capacityClause);
+      }
+    }
 
-          modelQuery.$and = modelQuery.$and || [];
-          modelQuery.$and.push(capacityClause);
-        }
+    console.log(`=== ${prodType.toUpperCase()} QUERY ===`, JSON.stringify(modelQuery, null, 2));
 
-        const documents = await model.find(modelQuery).populate("brand category").lean();
-        return documents.map((doc) => ({ ...doc, prodType }));
-      })
-    );
+    const documents = await model.find(modelQuery).populate("brand category productLine").lean();
+    
+    console.log(`=== ${prodType.toUpperCase()} FOUND ===`, documents.length);
+    if (prodType === "inverter") {
+  const totalInverters = await model.countDocuments({});
+  console.log("=== TOTAL INVERTERS IN DB ===", totalInverters);
+  
+  const invertersWithProductLine = await model.countDocuments({ 
+    productLine: { $exists: true, $ne: null } 
+  });
+  console.log("=== INVERTERS WITH PRODUCT LINE ===", invertersWithProductLine);
+  
+  const invertersMatchingProductLine = await model.countDocuments({ 
+    productLine: toObjectId(req.query.productLine) 
+  });
+  console.log("=== INVERTERS MATCHING PRODUCT LINE ID ===", invertersMatchingProductLine);
+}
+    
+    return documents.map((doc) => ({ ...doc, prodType }));
+  })
+);
+
 
     const aggregatedProducts = modelResults.flat();
 
     const totalFound = aggregatedProducts.length;
     const pagedDocuments = aggregatedProducts.slice(offset, offset + pageSize);
-    const enrichedGenericDocs = await appendReviewStats(pagedDocuments);
+    const data = await appendReviewStats(pagedDocuments);
 
     return res.json({
       success: true,
-      count: enrichedGenericDocs.length,
+      count: data.length,
       total: totalFound,
       pagination: {
         page: pageNumber,
         limit: pageSize,
         totalPages: Math.ceil(totalFound / pageSize) || 1,
       },
-      data: enrichedGenericDocs,
+       data,
     });
   } catch (error) {
     return res
@@ -281,6 +356,7 @@ exports.getProducts = async (req, res) => {
       .json({ success: false, message: error.message || "Server Error" });
   }
 };
+
 
 
 
